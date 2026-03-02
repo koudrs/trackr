@@ -1,0 +1,32 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+.venv
+*.egg-info
+.pytest_cache
+.ruff_cache
+
+# Node
+front/node_modules
+front/.next
+
+# Environment
+.env
+.env.*
+api/.env
+
+# IDE
+.vscode
+.idea
+.claude
+
+# Logs & misc
+*.log
+*.md
+scripts/
+tests/
