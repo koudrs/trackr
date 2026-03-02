@@ -1,4 +1,6 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// En producción usa /api (rewrite a localhost:8000)
+// En desarrollo usa la URL directa del API
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
 
 export interface TrackingEvent {
   timestamp: string | null;
@@ -31,7 +33,7 @@ export interface TrackingError {
 }
 
 export async function trackAWB(awb: string): Promise<TrackingResult> {
-  const res = await fetch(`${API_URL}/track/${awb}`);
+  const res = await fetch(`${API_BASE}/track/${awb}`);
 
   if (!res.ok) {
     const error = await res.json();

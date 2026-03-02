@@ -12,9 +12,7 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
 
 COPY front/ .
 
-ARG NEXT_PUBLIC_API_URL
 ARG NEXT_PUBLIC_TURNSTILE_SITE_KEY
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_TURNSTILE_SITE_KEY=$NEXT_PUBLIC_TURNSTILE_SITE_KEY
 
 RUN pnpm build
@@ -51,10 +49,12 @@ RUN addgroup --system --gid 1001 appgroup \
     && chown -R appuser:appgroup /app
 USER appuser
 
-EXPOSE 8000 3000
+EXPOSE 3000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+# Health check on frontend (which proxies to API)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost:3000/ || exit 1
 
+# API runs internally on 8000, frontend on 3000 (exposed)
+# Next.js rewrites /api/* to localhost:8000/*
 CMD ["sh", "-c", "uvicorn api.main:app --host 0.0.0.0 --port 8000 & cd front && node server.js"]
