@@ -54,12 +54,16 @@ class AFKLCargoTracker(CarrierTracker):
     def _fetch_with_scrapling(self, url: str) -> tuple[str, str]:
         """Fetch page using Scrapling StealthyFetcher."""
         from scrapling.fetchers import StealthyFetcher
+        from .base import IS_CONTAINER
 
-        page = StealthyFetcher.fetch(
-            url,
-            headless=True,
-            network_idle=True,
-        )
+        fetch_kwargs = {
+            "headless": True,
+            "network_idle": True,
+        }
+        if IS_CONTAINER:
+            fetch_kwargs["chromium_sandbox"] = False
+
+        page = StealthyFetcher.fetch(url, **fetch_kwargs)
 
         html = page.html_content
         text = page.get_all_text()

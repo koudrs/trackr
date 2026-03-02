@@ -26,10 +26,26 @@ RUN addgroup --system --gid 1001 appgroup \
 
 WORKDIR /app
 
-# Install Node.js runtime + tesseract for China Cargo OCR
+# Install Node.js runtime + tesseract for China Cargo OCR + deps for Chrome
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     tesseract-ocr \
+    # Chrome dependencies
+    libnss3 \
+    libnspr4 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libasound2 \
+    libpango-1.0-0 \
+    libcairo2 \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -38,12 +54,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright as appuser so browsers are in the right location
+# Install Playwright browsers
 ENV PLAYWRIGHT_BROWSERS_PATH=/app/.playwright
-RUN mkdir -p /app/.playwright \
+RUN mkdir -p /app/.playwright /tmp/.X11-unix \
+    && chmod 1777 /tmp/.X11-unix \
     && chown -R appuser:appgroup /app/.playwright \
-    && su appuser -s /bin/sh -c "playwright install chromium" \
-    && playwright install-deps chromium
+    && su appuser -s /bin/sh -c "playwright install chromium"
 
 # Copy API code
 COPY api/ ./api/
@@ -54,10 +70,16 @@ COPY --from=frontend-builder /app/front/.next/standalone ./front/
 COPY --from=frontend-builder /app/front/.next/static ./front/.next/static
 COPY --from=frontend-builder /app/front/public ./front/public
 
-# Set ownership
-RUN chown -R appuser:appgroup /app
+# Set ownership and create temp dirs with proper permissions
+RUN chown -R appuser:appgroup /app \
+    && mkdir -p /tmp/playwright \
+    && chown -R appuser:appgroup /tmp/playwright
 
 USER appuser
+
+# Environment for headless Chrome in containers
+ENV DISPLAY=:99
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
 EXPOSE 3000
 

@@ -1,12 +1,16 @@
 """Base class for all carrier trackers."""
 
 import asyncio
+import os
 from abc import ABC, abstractmethod
 from datetime import datetime, UTC
 
 import httpx
 
 from api.models import StatusCode, TrackingResult, TrackingSource
+
+# Detect if running in container (Docker/Render)
+IS_CONTAINER = os.path.exists("/.dockerenv") or os.environ.get("RENDER", "")
 
 
 class CarrierTracker(ABC):
@@ -130,11 +134,16 @@ class ScraplingTracker(CarrierTracker):
         """
         if self.use_stealth:
             from scrapling.fetchers import StealthyFetcher
-            page = StealthyFetcher.fetch(
-                url,
-                headless=self.headless,
-                network_idle=self.wait_for_network,
-            )
+
+            # Container-specific options (Docker/Render)
+            fetch_kwargs = {
+                "headless": self.headless,
+                "network_idle": self.wait_for_network,
+            }
+            if IS_CONTAINER:
+                fetch_kwargs["chromium_sandbox"] = False
+
+            page = StealthyFetcher.fetch(url, **fetch_kwargs)
         else:
             # Regular Fetcher uses .get() method
             from scrapling.fetchers import Fetcher
