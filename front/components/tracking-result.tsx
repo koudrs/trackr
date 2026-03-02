@@ -70,7 +70,7 @@ function TimelineEvent({ event, isFirst, isLast }: { event: TrackingEvent; isFir
             {config.label}
           </span>
           {event.location && (
-            <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0">
+            <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0 bg-background">
               {event.location}
             </Badge>
           )}
@@ -99,8 +99,8 @@ export function TrackingResultCard({ data }: TrackingResultProps) {
   const latestConfig = latestEvent ? STATUS_CONFIG[latestEvent.status_code] || STATUS_CONFIG.UNK : null;
 
   return (
-    <Card className="w-full max-w-md">
-      <CardHeader className="p-3 pb-2">
+    <Card className="w-full max-w-md shadow-sm border-border/60">
+      <CardHeader className="p-4 pb-3">
         {/* Header row: AWB + Status */}
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
@@ -108,15 +108,15 @@ export function TrackingResultCard({ data }: TrackingResultProps) {
             <p className="text-xs text-muted-foreground">{data.airline} ({data.iata_code})</p>
           </div>
           {latestConfig && (
-            <Badge className="text-xs px-2 py-0.5 shrink-0" variant="secondary">
-              <latestConfig.icon className={`h-3.5 w-3.5 mr-1 ${latestConfig.color}`} />
+            <Badge className="text-xs px-2.5 py-1 shrink-0 shadow-sm" variant="secondary">
+              <latestConfig.icon className={`h-3.5 w-3.5 mr-1.5 ${latestConfig.color}`} />
               {latestConfig.label}
             </Badge>
           )}
         </div>
 
         {/* Route + Stats in one row */}
-        <div className="flex items-center justify-between mt-2 py-2 px-3 bg-muted/50 rounded gap-2">
+        <div className="flex items-center justify-between mt-3 py-2.5 px-3 bg-muted/70 rounded-lg border border-border/40 gap-2">
           <div className="flex items-center gap-2">
             <span className="font-mono text-base font-bold">{data.origin || "?"}</span>
             <Plane className="h-4 w-4 text-muted-foreground" />
@@ -140,9 +140,9 @@ export function TrackingResultCard({ data }: TrackingResultProps) {
       </CardHeader>
 
       {data.events.length > 0 && (
-        <CardContent className="p-3 pt-0">
-          <div className="border-t pt-2">
-            <p className="text-xs font-medium mb-2">Historial</p>
+        <CardContent className="p-4 pt-0">
+          <div className="border-t pt-3">
+            <p className="text-xs font-medium mb-2 text-muted-foreground uppercase tracking-wide">Historial</p>
             <div>
               {data.events.map((event, idx) => (
                 <TimelineEvent

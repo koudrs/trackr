@@ -20,19 +20,30 @@ RUN pnpm build
 # Stage 2: Production runtime
 FROM python:3.12-slim AS runtime
 
+# Create non-root user first
+RUN addgroup --system --gid 1001 appgroup \
+    && adduser --system --uid 1001 --ingroup appgroup appuser
+
 WORKDIR /app
 
-# Install Node.js runtime only (no build tools)
+# Install Node.js runtime + tesseract for China Cargo OCR
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    tesseract-ocr \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Python deps
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
-    && playwright install chromium --with-deps
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install Playwright as appuser so browsers are in the right location
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/.playwright
+RUN mkdir -p /app/.playwright \
+    && chown -R appuser:appgroup /app/.playwright \
+    && su appuser -s /bin/sh -c "playwright install chromium" \
+    && playwright install-deps chromium
 
 # Copy API code
 COPY api/ ./api/
@@ -43,18 +54,16 @@ COPY --from=frontend-builder /app/front/.next/standalone ./front/
 COPY --from=frontend-builder /app/front/.next/static ./front/.next/static
 COPY --from=frontend-builder /app/front/public ./front/public
 
-# Non-root user
-RUN addgroup --system --gid 1001 appgroup \
-    && adduser --system --uid 1001 --ingroup appgroup appuser \
-    && chown -R appuser:appgroup /app
+# Set ownership
+RUN chown -R appuser:appgroup /app
+
 USER appuser
 
 EXPOSE 3000
 
-# Health check on frontend (which proxies to API)
+# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:3000/ || exit 1
 
-# API runs internally on 8000, frontend on 3000 (exposed)
-# Next.js rewrites /api/* to localhost:8000/*
+# API on 8000 (internal), frontend on 3000 (exposed)
 CMD ["sh", "-c", "uvicorn api.main:app --host 0.0.0.0 --port 8000 & cd front && node server.js"]

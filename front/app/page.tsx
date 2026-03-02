@@ -32,7 +32,7 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen flex flex-col items-center px-4 py-4 md:py-6 gap-4">
+    <main className="min-h-screen flex flex-col items-center px-4 py-6 md:py-8 gap-5">
       <div className="text-center">
         <h1 className="text-xl md:text-2xl font-bold">Tracking de Carga</h1>
         <p className="text-sm text-muted-foreground">Ingresa tu AWB para rastrear</p>
@@ -41,7 +41,7 @@ export default function Home() {
       <TrackingForm onSubmit={handleTrack} onClear={handleClear} isLoading={isLoading} />
 
       {error && (
-        <div className="bg-destructive/10 text-destructive px-3 py-1.5 rounded text-sm max-w-md text-center">
+        <div className="bg-destructive/10 text-destructive px-4 py-2 rounded-lg text-sm max-w-md text-center border border-destructive/20">
           {error}
         </div>
       )}
@@ -49,6 +49,15 @@ export default function Home() {
       {result && <TrackingResultCard data={result} />}
 
       {!result && !error && <SupportedCarriers />}
+
+      <footer className="mt-auto pt-8 pb-4">
+        <p className="text-xs text-muted-foreground">
+          Powered by{" "}
+          <a href="https://koudrs.com" target="_blank" rel="noopener noreferrer" className="hover:underline">
+            koudrs.com
+          </a>
+        </p>
+      </footer>
     </main>
   );
 }

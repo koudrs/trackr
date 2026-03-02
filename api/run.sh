@@ -3,7 +3,24 @@
 # Usage: ./run.sh         - Start server
 #        ./run.sh clean   - Clean everything, reinstall, and start
 
-cd "$(dirname "$0")"
+# Go to project root (parent of api/)
+cd "$(dirname "$0")/.."
+
+# Find Python 3.10+ (required for scrapling)
+PYTHON=""
+for p in python3.14 python3.13 python3.12 python3.11 python3.10; do
+    if command -v $p &> /dev/null; then
+        PYTHON=$p
+        break
+    fi
+done
+
+if [ -z "$PYTHON" ]; then
+    echo "ERROR: Python 3.10+ required. Install with: brew install python@3.12"
+    exit 1
+fi
+
+echo "Using $PYTHON"
 
 if [ "$1" = "clean" ]; then
     echo "Stopping any running uvicorn processes..."
@@ -25,7 +42,7 @@ fi
 # Create venv if it doesn't exist
 if [ ! -d ".venv" ]; then
     echo "Creating virtual environment..."
-    python3 -m venv .venv
+    $PYTHON -m venv .venv
 fi
 
 source .venv/bin/activate
@@ -33,7 +50,7 @@ source .venv/bin/activate
 # Install deps if needed
 if ! python -c "import fastapi" 2>/dev/null; then
     echo "Installing dependencies..."
-    pip install -e . -q
+    pip install -r requirements.txt -q
 fi
 
 echo ""

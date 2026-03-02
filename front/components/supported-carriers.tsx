@@ -24,29 +24,29 @@ export function SupportedCarriers() {
   const totalPrefixes = CARRIERS.flatMap((c) => c.prefixes).length;
 
   return (
-    <Card className="w-full max-w-xl">
-      <CardHeader className="p-3 pb-2">
+    <Card className="w-full max-w-md shadow-sm border-border/60">
+      <CardHeader className="p-4 pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm flex items-center gap-1.5">
             <Plane className="h-4 w-4" />
             Aerolíneas
           </CardTitle>
-          <Badge variant="secondary" className="text-[10px]">
+          <Badge variant="secondary" className="text-[10px] shadow-sm">
             {CARRIERS.length} carriers / {totalPrefixes} prefijos
           </Badge>
         </div>
       </CardHeader>
-      <CardContent className="p-3 pt-0">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+      <CardContent className="p-4 pt-0">
+        <div className="space-y-2">
           {CARRIERS.map((carrier) => (
             <div
               key={carrier.name}
-              className="flex items-center justify-between p-2 rounded border bg-card"
+              className="flex items-center justify-between p-2.5 rounded-lg border border-border/40 bg-muted/30"
             >
-              <span className="text-xs font-medium truncate mr-2">{carrier.name}</span>
-              <div className="flex gap-0.5 shrink-0">
+              <span className="text-xs font-medium">{carrier.name}</span>
+              <div className="flex gap-1 flex-wrap justify-end">
                 {carrier.prefixes.map((prefix) => (
-                  <Badge key={prefix} variant="outline" className="font-mono text-[10px] px-1 py-0">
+                  <Badge key={prefix} variant="outline" className="font-mono text-[10px] px-1.5 py-0 bg-background">
                     {prefix}
                   </Badge>
                 ))}
