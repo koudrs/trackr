@@ -68,8 +68,8 @@ class AFKLCargoTracker(CarrierTracker):
 
         fetch_kwargs = {
             "headless": True,
-            "network_idle": True,
-            "timeout": 45000,
+            "load_dom": True,  # Wait for JS to execute
+            "timeout": 20000,
             "disable_resources": True,  # Skip images, fonts, media, stylesheets
         }
 

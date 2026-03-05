@@ -1,22 +1,22 @@
 """LATAM Cargo tracking (LA - prefix 045)."""
 
-import asyncio
 import logging
 import re
 from datetime import datetime
 
 from api.models import StatusCode, TrackingEvent, TrackingResult, TrackingSource
 
-from .base import CarrierTracker, IS_CONTAINER
+from .base import CarrierTracker
 
 logger = logging.getLogger(__name__)
 
 
 class LatamCargoTracker(CarrierTracker):
     """
-    LATAM Cargo tracking using Scrapling.
+    LATAM Cargo tracking via direct API.
 
-    URL: https://www.latamcargo.com/en/trackshipment?docNumber={serial}&docPrefix={prefix}&soType=MAWB
+    API: POST https://www.latamcargo.com/en/doTrackShipmentsAction
+    Payload: {"cargoTrackingRequestSOs":[{"documentPrefix":"045","documentNumber":"XXXXXXXX","documentType":"MAWB"}]}
 
     Prefix: 045 → LATAM Cargo (LA)
     """
@@ -25,7 +25,7 @@ class LatamCargoTracker(CarrierTracker):
     iata_code = "LA"
     prefixes = ["045"]
 
-    BASE_URL = "https://www.latamcargo.com/en/trackshipment"
+    API_URL = "https://www.latamcargo.com/en/doTrackShipmentsAction"
 
     # LATAM status mapping
     STATUS_MAP = {
@@ -53,194 +53,149 @@ class LatamCargoTracker(CarrierTracker):
     }
 
     async def track(self, prefix: str, serial: str) -> TrackingResult:
-        """Track LATAM Cargo shipment via Scrapling."""
-        result = self.empty_result(prefix, serial, TrackingSource.HTML)
+        """Track LATAM Cargo shipment via direct API (with Scrapling fallback)."""
+        result = self.empty_result(prefix, serial, TrackingSource.API)
 
-        url = f"{self.BASE_URL}?docNumber={serial}&docPrefix={prefix}&soType=MAWB"
+        payload = {
+            "cargoTrackingRequestSOs": [{
+                "documentPrefix": prefix,
+                "documentNumber": serial,
+                "documentType": "MAWB"
+            }]
+        }
+
+        # Try direct API first (fast)
+        try:
+            async with self.create_http_client() as client:
+                logger.info(f"[LATAM] Calling API for {prefix}-{serial}")
+                response = await client.post(
+                    self.API_URL,
+                    json=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Accept": "text/html, */*",
+                        "Referer": "https://www.latamcargo.com/en/trackshipment",
+                    }
+                )
+                response.raise_for_status()
+                html = response.text
+
+                # Check if we got blocked (captcha, empty response, etc.)
+                if len(html) < 500 or "captcha" in html.lower() or "blocked" in html.lower():
+                    logger.warning(f"[LATAM] API returned suspicious response, falling back to Scrapling")
+                    raise Exception("Blocked or captcha detected")
+
+                logger.info(f"[LATAM] API success - HTML length: {len(html)}")
+                return self._parse_html(result, html)
+
+        except Exception as e:
+            logger.warning(f"[LATAM] API failed ({e}), trying Scrapling fallback...")
+
+        # Fallback to Scrapling if API fails
+        return await self._track_with_scrapling(prefix, serial, result)
+
+    async def _track_with_scrapling(self, prefix: str, serial: str, result: TrackingResult) -> TrackingResult:
+        """Fallback tracking using Scrapling."""
+        import asyncio
+        from scrapling.fetchers import StealthyFetcher
+
+        url = f"https://www.latamcargo.com/en/trackshipment?docNumber={serial}&docPrefix={prefix}&soType=MAWB"
+        logger.info(f"[LATAM] Scrapling fallback for {url}")
 
         try:
-            # Run Scrapling in thread pool (synchronous)
             loop = asyncio.get_event_loop()
-            html, text = await loop.run_in_executor(None, self._fetch_with_scrapling, url)
-
-            if not text:
-                result.status = "No tracking data found"
-                return result
-
-            return self._parse_page(result, html, text)
+            page = await loop.run_in_executor(None, lambda: StealthyFetcher.fetch(
+                url,
+                headless=True,
+                load_dom=True,
+                timeout=30000,
+                disable_resources=True,
+            ))
+            html = page.html_content
+            logger.info(f"[LATAM] Scrapling success - HTML length: {len(html)}")
+            result.source = TrackingSource.HTML
+            return self._parse_html(result, html)
         except Exception as e:
+            logger.error(f"[LATAM] Scrapling error: {type(e).__name__}: {e}")
             result.status = f"Tracking error: {str(e)[:50]}"
             return result
 
-    def _fetch_with_scrapling(self, url: str) -> tuple[str, str]:
-        """Fetch page using Scrapling StealthyFetcher."""
-        from scrapling.fetchers import StealthyFetcher
-
-        logger.info(f"[LATAM] Fetching URL: {url}")
-        logger.info(f"[LATAM] IS_CONTAINER: {IS_CONTAINER}")
-
-        fetch_kwargs = {
-            "headless": True,
-            "network_idle": True,
-            "timeout": 45000,
-            "disable_resources": True,  # Skip images, fonts, media, stylesheets
-        }
-
-        try:
-            page = StealthyFetcher.fetch(url, **fetch_kwargs)
-            html = page.html_content
-            text = page.get_all_text()
-
-            logger.info(f"[LATAM] Fetch success - HTML length: {len(html)}, Text length: {len(text)}")
-
-            return html, text
-        except Exception as e:
-            logger.error(f"[LATAM] Fetch error: {type(e).__name__}: {e}")
-            raise
-
-    def _parse_page(self, result: TrackingResult, html: str, text: str) -> TrackingResult:
-        """Parse LATAM Cargo tracking page."""
-        # Check for no data
-        if "no encontr" in text.lower() or "not found" in text.lower():
-            return result
-
-        # Extract shipment summary
-        self._extract_summary(result, text)
-
-        # Parse events table
-        events = self._parse_events(text)
-
-        # Sort events by timestamp (newest first)
-        events.sort(key=lambda e: e.timestamp or datetime.min, reverse=True)
-
-        result.events = events
-        result.source = TrackingSource.HTML
-
-        if events and not result.status:
-            result.status = events[0].description
-
-        return result
-
-    def _extract_summary(self, result: TrackingResult, text: str) -> None:
-        """Extract summary info from page text."""
-        # Pattern for summary table row:
-        # MIA PTY STD BASIC GENERAL CARGO 42 876.00
-        summary_match = re.search(
-            r"([A-Z]{3})\s+([A-Z]{3})\s+(?:STD|NEXT|PRIME|OVERNIGHT|STANDARD)[^\d]*(\d+)\s+([\d.]+)",
-            text
-        )
-        if summary_match:
-            result.origin = summary_match.group(1)
-            result.destination = summary_match.group(2)
-            result.pieces = int(summary_match.group(3))
-            result.weight = float(summary_match.group(4))
-            return
-
-        # Fallback: look for route pattern like "MIA-PTY"
-        route_match = re.search(r"\b([A-Z]{3})-([A-Z]{3})\b", text)
+    def _parse_html(self, result: TrackingResult, html: str) -> TrackingResult:
+        """Parse LATAM Cargo API response HTML."""
+        # Extract route from header: "045-21930510 MIA-PTY"
+        route_match = re.search(r"\d{3}-\d{8}\s+([A-Z]{3})-([A-Z]{3})", html)
         if route_match:
             result.origin = route_match.group(1)
             result.destination = route_match.group(2)
 
-        # Fallback: pieces and weight from event lines
-        # Pattern: "42 / 879.00KGS"
-        pw_match = re.search(r"(\d+)\s*/\s*([\d.]+)\s*KGS", text, re.I)
-        if pw_match:
-            result.pieces = int(pw_match.group(1))
-            result.weight = float(pw_match.group(2))
+        # Extract shipment summary from table
+        # <td id="shipment_origin">MIA</td>
+        # <td id="shipment_destination">PTY</td>
+        # <td id="totalPieces">42</td>
+        # <td>876.00</td>
+        origin_match = re.search(r'id="shipment_origin"[^>]*>([A-Z]{3})<', html)
+        dest_match = re.search(r'id="shipment_destination"[^>]*>([A-Z]{3})<', html)
+        pieces_match = re.search(r'id="totalPieces"[^>]*>(\d+)<', html)
+        weight_match = re.search(r'id="totalPieces"[^>]*>\d+</td>\s*<td>([\d.]+)<', html)
 
-    def _parse_events(self, text: str) -> list[TrackingEvent]:
-        """Parse tracking events from page text.
+        if origin_match:
+            result.origin = origin_match.group(1)
+        if dest_match:
+            result.destination = dest_match.group(1)
+        if pieces_match:
+            result.pieces = int(pieces_match.group(1))
+        if weight_match:
+            result.weight = float(weight_match.group(1))
 
-        Format in text:
-        RCS Shipment Received MIA 42 / 879.00KGS 04-Mar-2026 16:44
-        FOH Freight on Hand MIA 42 / 879.00KGS 04-Mar-2026 16:37
-        BKD Booking Confirmed MIA XL 0425 42 / 876.00KGS 04-Mar-2026 15:19
-        """
+        # Parse events from statusTable
+        events = self._parse_events_html(html)
+        events.sort(key=lambda e: e.timestamp or datetime.min, reverse=True)
+        result.events = events
+
+        if events:
+            result.status = events[0].description
+
+        return result
+
+    def _parse_events_html(self, html: str) -> list[TrackingEvent]:
+        """Parse events from HTML table rows."""
         events: list[TrackingEvent] = []
 
-        # Pattern for event lines
-        # Status | Description | Station | [Flight] | Pieces/Weight | Date Time
+        # Pattern for event rows in statusTable
+        # <td class="movementStatus">RCS</td>
+        # <td class="mvtDesc">Shipment Received</td>
+        # <td class="eventAirport">MIA</td>
+        # <td class="flightNumber_eventTable">XL 0425<br />MIA-PTY</td>
+        # <td class="actualpk">42 / 879.00KGS</td>
+        # <td>04-Mar-2026 16:44</td>
         event_pattern = re.compile(
-            r"(RCS|FOH|BKD|MAN|DEP|ARR|RCF|NFD|DLV)\s+"  # Status code
-            r"([A-Za-z\s]+?)\s+"  # Description
-            r"([A-Z]{3})\s+"  # Station
-            r"(?:([A-Z]{2}\s*\d{3,4})\s+)?"  # Optional flight
-            r"(\d+)\s*/\s*([\d.]+)\s*KGS\s+"  # Pieces / Weight
-            r"(\d{1,2}-[A-Z][a-z]{2}-\d{4})\s+(\d{1,2}:\d{2})",  # Date Time
-            re.I
+            r'class="movementStatus">([A-Z]{3})</td>\s*'
+            r'<td[^>]*class="mvtDesc"[^>]*>([^<]+)</td>\s*'
+            r'<td[^>]*class="eventAirport"[^>]*>([A-Z]{3})</td>\s*'
+            r'<td[^>]*class="flightNumber_eventTable"[^>]*>\s*([^<]*?)(?:<br\s*/?>.*?)?</td>\s*'
+            r'<td[^>]*class="actualpk"[^>]*>(\d+)\s*/\s*([\d.]+)KGS</td>\s*'
+            r'<td[^>]*>(\d{1,2}-[A-Z][a-z]{2}-\d{4})\s+(\d{1,2}:\d{2})</td>',
+            re.IGNORECASE | re.DOTALL
         )
 
-        for match in event_pattern.finditer(text):
+        for match in event_pattern.finditer(html):
             status_code_str = match.group(1).upper()
             description = match.group(2).strip()
             station = match.group(3)
-            flight = match.group(4).replace(" ", "") if match.group(4) else None
+            flight_raw = match.group(4).strip()
             pieces = int(match.group(5))
-            weight = float(match.group(6))
             date_str = match.group(7)
             time_str = match.group(8)
 
-            # Parse datetime
+            # Extract flight number (e.g., "XL 0425" -> "XL0425")
+            flight = None
+            if flight_raw:
+                flight_match = re.search(r"([A-Z]{2})\s*(\d{3,4})", flight_raw)
+                if flight_match:
+                    flight = f"{flight_match.group(1)}{flight_match.group(2)}"
+
             timestamp = self._parse_datetime(f"{date_str} {time_str}")
-
-            # Map status
             status_code = self.map_status(status_code_str)
-
-            events.append(TrackingEvent(
-                timestamp=timestamp,
-                status_code=status_code,
-                description=description,
-                location=station,
-                flight=flight,
-                pieces=pieces,
-            ))
-
-        # If regex didn't match, try line-by-line
-        if not events:
-            events = self._parse_events_fallback(text)
-
-        return events
-
-    def _parse_events_fallback(self, text: str) -> list[TrackingEvent]:
-        """Fallback event parser - line by line."""
-        events: list[TrackingEvent] = []
-        lines = text.split("\n")
-
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-
-            # Look for IATA status codes at start of line
-            status_match = re.match(r"^(RCS|FOH|BKD|MAN|DEP|ARR|RCF|NFD|DLV)\b", line, re.I)
-            if not status_match:
-                continue
-
-            status_code_str = status_match.group(1).upper()
-            status_code = self.map_status(status_code_str)
-
-            # Extract station (3-letter code after description)
-            station_match = re.search(r"\b([A-Z]{3})\b", line[4:])
-            station = station_match.group(1) if station_match else None
-
-            # Extract pieces/weight
-            pw_match = re.search(r"(\d+)\s*/\s*([\d.]+)", line)
-            pieces = int(pw_match.group(1)) if pw_match else None
-
-            # Extract datetime
-            dt_match = re.search(r"(\d{1,2}-[A-Z][a-z]{2}-\d{4})\s+(\d{1,2}:\d{2})", line)
-            timestamp = None
-            if dt_match:
-                timestamp = self._parse_datetime(f"{dt_match.group(1)} {dt_match.group(2)}")
-
-            # Extract flight
-            flight_match = re.search(r"\b([A-Z]{2}\s*\d{3,4})\b", line)
-            flight = flight_match.group(1).replace(" ", "") if flight_match else None
-
-            # Get description (text between status and station)
-            desc_match = re.search(rf"{status_code_str}\s+(.+?)\s+[A-Z]{{3}}", line, re.I)
-            description = desc_match.group(1).strip() if desc_match else status_code_str
 
             events.append(TrackingEvent(
                 timestamp=timestamp,
