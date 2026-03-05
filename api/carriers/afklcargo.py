@@ -75,14 +75,15 @@ class AFKLCargoTracker(CarrierTracker):
         }
 
         # Docker/container fixes for shared memory issues
+        # extra_flags must be a tuple (Scrapling concatenates with DEFAULT_ARGS tuple)
         if IS_CONTAINER:
-            fetch_kwargs["extra_flags"] = [
+            fetch_kwargs["extra_flags"] = (
                 "--no-sandbox",
                 "--disable-dev-shm-usage",
                 "--disable-gpu",
                 "--no-zygote",
                 "--single-process",
-            ]
+            )
             logger.info(f"[AFKL] Container mode enabled with flags: {fetch_kwargs['extra_flags']}")
 
         try:

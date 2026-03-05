@@ -166,13 +166,14 @@ class ScraplingTracker(CarrierTracker):
             }
             if IS_CONTAINER:
                 # Fix for Docker shared memory issues
-                fetch_kwargs["extra_flags"] = [
+                # extra_flags must be a tuple (Scrapling concatenates with DEFAULT_ARGS tuple)
+                fetch_kwargs["extra_flags"] = (
                     "--no-sandbox",
                     "--disable-dev-shm-usage",
                     "--disable-gpu",
                     "--no-zygote",
                     "--single-process",
-                ]
+                )
 
             page = StealthyFetcher.fetch(url, **fetch_kwargs)
         else:
