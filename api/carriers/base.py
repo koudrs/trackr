@@ -165,14 +165,14 @@ class ScraplingTracker(CarrierTracker):
                 "network_idle": self.wait_for_network,
             }
             if IS_CONTAINER:
-                fetch_kwargs["chromium_sandbox"] = False
                 # Fix for Docker shared memory issues
-                fetch_kwargs["extra_flags"] = (
+                fetch_kwargs["extra_flags"] = [
+                    "--no-sandbox",
                     "--disable-dev-shm-usage",
                     "--disable-gpu",
                     "--no-zygote",
                     "--single-process",
-                )
+                ]
 
             page = StealthyFetcher.fetch(url, **fetch_kwargs)
         else:

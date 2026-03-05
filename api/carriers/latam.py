@@ -89,13 +89,13 @@ class LatamCargoTracker(CarrierTracker):
 
         # Docker/container fixes for shared memory issues
         if IS_CONTAINER:
-            fetch_kwargs["chromium_sandbox"] = False
-            fetch_kwargs["extra_flags"] = (
+            fetch_kwargs["extra_flags"] = [
+                "--no-sandbox",
                 "--disable-dev-shm-usage",
                 "--disable-gpu",
                 "--no-zygote",
                 "--single-process",
-            )
+            ]
             logger.info(f"[LATAM] Container mode enabled with flags: {fetch_kwargs['extra_flags']}")
 
         try:
