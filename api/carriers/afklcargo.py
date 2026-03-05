@@ -39,13 +39,6 @@ class AFKLCargoTracker(CarrierTracker):
         """Track KLM/Air France shipment using Scrapling."""
         result = self.empty_result(prefix, serial, TrackingSource.HTML)
 
-        # Playwright/Scrapling requires more resources than available in container
-        # Return a helpful message instead of crashing
-        if IS_CONTAINER:
-            result.status = "AF/KLM temporarily unavailable"
-            result.events = []
-            return result
-
         awb = self.format_awb(prefix, serial)
         url = f"{self.BASE_URL}/{awb}"
 
@@ -67,15 +60,23 @@ class AFKLCargoTracker(CarrierTracker):
         """Fetch page using Scrapling StealthyFetcher."""
         from scrapling.fetchers import StealthyFetcher
 
-        page = StealthyFetcher.fetch(
-            url,
-            headless=True,
-            network_idle=True,
-        )
+        fetch_kwargs = {
+            "headless": True,
+            "network_idle": True,
+        }
 
-        html = page.html_content
-        text = page.get_all_text()
-        return html, text
+        # Docker/container fixes for shared memory issues
+        if IS_CONTAINER:
+            fetch_kwargs["chromium_sandbox"] = False
+            fetch_kwargs["extra_args"] = [
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--no-zygote",
+                "--single-process",
+            ]
+
+        page = StealthyFetcher.fetch(url, **fetch_kwargs)
+        return page.html_content, page.get_all_text()
 
     def _parse_text(self, result: TrackingResult, text: str, html: str) -> TrackingResult:
         """Parse tracking data from page text content."""

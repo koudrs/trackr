@@ -53,12 +53,6 @@ class LatamCargoTracker(CarrierTracker):
         """Track LATAM Cargo shipment via Scrapling."""
         result = self.empty_result(prefix, serial, TrackingSource.HTML)
 
-        # Scrapling/Playwright requires resources not available in container
-        if IS_CONTAINER:
-            result.status = "LATAM temporarily unavailable"
-            result.events = []
-            return result
-
         url = f"{self.BASE_URL}?docNumber={serial}&docPrefix={prefix}&soType=MAWB"
 
         try:
@@ -79,12 +73,22 @@ class LatamCargoTracker(CarrierTracker):
         """Fetch page using Scrapling StealthyFetcher."""
         from scrapling.fetchers import StealthyFetcher
 
-        page = StealthyFetcher.fetch(
-            url,
-            headless=True,
-            network_idle=True,  # Need to wait for data to load
-        )
+        fetch_kwargs = {
+            "headless": True,
+            "network_idle": True,  # Need to wait for data to load
+        }
 
+        # Docker/container fixes for shared memory issues
+        if IS_CONTAINER:
+            fetch_kwargs["chromium_sandbox"] = False
+            fetch_kwargs["extra_args"] = [
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--no-zygote",
+                "--single-process",
+            ]
+
+        page = StealthyFetcher.fetch(url, **fetch_kwargs)
         return page.html_content, page.get_all_text()
 
     def _parse_page(self, result: TrackingResult, html: str, text: str) -> TrackingResult:

@@ -132,19 +132,13 @@ class ScraplingTracker(CarrierTracker):
     - Adaptive CSS selectors that survive layout changes
     - Built-in retry logic
 
-    NOTE: Scrapling requires Playwright which needs more resources than
-    typically available in container environments. Use is_available() to check.
+    Configured with Docker-compatible Chrome args for container environments.
     """
 
     # Scrapling settings
     use_stealth: bool = True  # Use StealthyFetcher vs regular Fetcher
     wait_for_network: bool = True  # Wait for network idle
     headless: bool = True
-
-    @classmethod
-    def is_available(cls) -> bool:
-        """Check if Scrapling can run in current environment."""
-        return not IS_CONTAINER
 
     def _get_fetcher(self):
         """Get appropriate Scrapling fetcher."""
@@ -165,13 +159,20 @@ class ScraplingTracker(CarrierTracker):
         if self.use_stealth:
             from scrapling.fetchers import StealthyFetcher
 
-            # Container-specific options (Docker/Render)
+            # Container-specific options (Docker/Render/DigitalOcean)
             fetch_kwargs = {
                 "headless": self.headless,
                 "network_idle": self.wait_for_network,
             }
             if IS_CONTAINER:
                 fetch_kwargs["chromium_sandbox"] = False
+                # Fix for Docker shared memory issues
+                fetch_kwargs["extra_args"] = [
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--no-zygote",
+                    "--single-process",
+                ]
 
             page = StealthyFetcher.fetch(url, **fetch_kwargs)
         else:
