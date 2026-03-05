@@ -6,7 +6,7 @@ from datetime import datetime
 
 from api.models import StatusCode, TrackingEvent, TrackingResult, TrackingSource
 
-from .base import CarrierTracker
+from .base import CarrierTracker, IS_CONTAINER
 
 
 class AFKLCargoTracker(CarrierTracker):
@@ -38,8 +38,14 @@ class AFKLCargoTracker(CarrierTracker):
     async def track(self, prefix: str, serial: str) -> TrackingResult:
         """Track KLM/Air France shipment using Scrapling."""
         result = self.empty_result(prefix, serial, TrackingSource.HTML)
-        awb = self.format_awb(prefix, serial)
 
+        # Playwright crashes on Render due to resource limits
+        # Mark as temporarily unavailable
+        if IS_CONTAINER:
+            result.status = "AF/KLM no disponible (requiere más recursos del servidor)"
+            return result
+
+        awb = self.format_awb(prefix, serial)
         url = f"{self.BASE_URL}/{awb}"
 
         # Run Scrapling in thread pool (it's synchronous)
@@ -54,16 +60,12 @@ class AFKLCargoTracker(CarrierTracker):
     def _fetch_with_scrapling(self, url: str) -> tuple[str, str]:
         """Fetch page using Scrapling StealthyFetcher."""
         from scrapling.fetchers import StealthyFetcher
-        from .base import IS_CONTAINER
 
-        fetch_kwargs = {
-            "headless": True,
-            "network_idle": True,
-        }
-        if IS_CONTAINER:
-            fetch_kwargs["chromium_sandbox"] = False
-
-        page = StealthyFetcher.fetch(url, **fetch_kwargs)
+        page = StealthyFetcher.fetch(
+            url,
+            headless=True,
+            network_idle=True,
+        )
 
         html = page.html_content
         text = page.get_all_text()
@@ -85,12 +87,9 @@ class AFKLCargoTracker(CarrierTracker):
                 break
 
         # Find origin/destination from route section
-        # Look for pattern like "HKG AMS PTY" or "HKG - AMS" in the route display
-        # The route typically appears after "Checked-in" line
         route_section = ""
         for i, line in enumerate(lines):
             if "Checked-in" in line or "checked-in" in line.lower():
-                # Next few lines should have the route
                 route_section = " ".join(lines[i:i+5])
                 break
 
@@ -98,7 +97,6 @@ class AFKLCargoTracker(CarrierTracker):
         if route_section:
             airports = re.findall(r"\b([A-Z]{3})\b", route_section)
         else:
-            # Fallback: look for flight route pattern "XXX - YYY"
             route_match = re.search(r"([A-Z]{3})\s*-\s*([A-Z]{3})", text)
             if route_match:
                 airports = [route_match.group(1), route_match.group(2)]
@@ -117,7 +115,6 @@ class AFKLCargoTracker(CarrierTracker):
                 break
 
         # Parse events from text
-        # Format: "14 FEB 18:19 - 91 pieces delivered at PTY"
         events: list[TrackingEvent] = []
 
         event_pattern = re.compile(
@@ -145,7 +142,6 @@ class AFKLCargoTracker(CarrierTracker):
             ))
 
         # Also parse flight schedule
-        # Format: "KL0888 11 FEB 23:25 - 12 FEB 06:40"
         flight_pattern = re.compile(
             r"([A-Z]{2}\d{3,4})\s+(\d{1,2}\s+[A-Z]{3}\s+\d{2}:\d{2})",
             re.IGNORECASE
@@ -156,7 +152,6 @@ class AFKLCargoTracker(CarrierTracker):
             dep_time_str = match.group(2)
             timestamp = self._parse_datetime(dep_time_str)
 
-            # Check if this flight event already exists
             exists = any(e.flight == flight_num for e in events)
             if not exists:
                 events.append(TrackingEvent(
@@ -166,7 +161,6 @@ class AFKLCargoTracker(CarrierTracker):
                     flight=flight_num,
                 ))
 
-        # Sort events by timestamp (newest first)
         events.sort(key=lambda e: e.timestamp or datetime.min, reverse=True)
         result.events = events
 
@@ -178,7 +172,6 @@ class AFKLCargoTracker(CarrierTracker):
     def _parse_datetime(self, dt_str: str) -> datetime | None:
         """Parse datetime like '14 FEB 18:19'."""
         try:
-            # Add current year
             year = datetime.now().year
             full_str = f"{dt_str} {year}"
             return datetime.strptime(full_str, "%d %b %H:%M %Y")

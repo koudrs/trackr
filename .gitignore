@@ -55,6 +55,20 @@ yarn-error.log*
 # Vercel/Render
 .vercel
 
+# AI/Agents (no incluir en repo)
+.claude/
+.agents/
+CLAUDE.md
+skills-lock.json
+INSTRUCTIONS.md
+
+# Dev tools (no incluir en entrega)
+Makefile
+requirements-dev.txt
+scripts/
+tests/
+pyproject.toml
+
 # Misc
 *.pem
 coverage/

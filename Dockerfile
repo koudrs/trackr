@@ -1,19 +1,21 @@
-# Multi-stage build for Python API + Next.js frontend
+# Multi-stage build for Python API + Vite frontend
 # Optimized for Render deployment
 
-# Stage 1: Frontend build
+# Stage 1: Frontend build (Vite)
 FROM node:20-alpine AS frontend-builder
 RUN corepack enable && corepack prepare pnpm@latest --activate
-WORKDIR /app/front
+WORKDIR /app/front-vite
 
-COPY front/package.json front/pnpm-lock.yaml ./
+COPY front-vite/package.json front-vite/pnpm-lock.yaml ./
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 
-COPY front/ .
+COPY front-vite/ .
 
-ARG NEXT_PUBLIC_TURNSTILE_SITE_KEY
-ENV NEXT_PUBLIC_TURNSTILE_SITE_KEY=$NEXT_PUBLIC_TURNSTILE_SITE_KEY
+ARG VITE_API_URL
+ARG VITE_TURNSTILE_SITE_KEY
+ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_TURNSTILE_SITE_KEY=$VITE_TURNSTILE_SITE_KEY
 
 RUN pnpm build
 
@@ -65,10 +67,11 @@ RUN mkdir -p /app/.playwright /tmp/.X11-unix \
 COPY api/ ./api/
 COPY pyproject.toml .
 
-# Copy frontend build artifacts
-COPY --from=frontend-builder /app/front/.next/standalone ./front/
-COPY --from=frontend-builder /app/front/.next/static ./front/.next/static
-COPY --from=frontend-builder /app/front/public ./front/public
+# Copy frontend build artifacts (Vite static build)
+COPY --from=frontend-builder /app/front-vite/dist ./front-vite/dist
+
+# Install serve for static files
+RUN npm install -g serve
 
 # Set ownership and create temp dirs with proper permissions
 RUN chown -R appuser:appgroup /app \
@@ -88,4 +91,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:3000/ || exit 1
 
 # API on 8000 (internal), frontend on 3000 (exposed)
-CMD ["sh", "-c", "uvicorn api.main:app --host 0.0.0.0 --port 8000 & cd front && node server.js"]
+CMD ["sh", "-c", "uvicorn api.main:app --host 0.0.0.0 --port 8000 & serve -s front-vite/dist -l 3000"]
