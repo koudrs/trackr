@@ -52,7 +52,7 @@ function App() {
         setSelectedResult(data);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error desconocido");
+      setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setIsLoading(false);
     }
@@ -147,12 +147,12 @@ function App() {
   return (
     <div className="h-screen flex overflow-hidden bg-[var(--background)]">
       {/* Mobile Sidebar Overlay */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+      <div
+        className={`fixed inset-0 bg-black/50 z-40 lg:hidden transition-opacity duration-300 ${
+          sidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+        }`}
+        onClick={() => setSidebarOpen(false)}
+      />
 
       {/* Sidebar */}
       <TrackingSidebar
@@ -240,7 +240,7 @@ function App() {
             {showLoading && selectedAWB && (
               <div className="mb-6">
                 <h2 className="text-sm font-medium text-[var(--muted-foreground)] mb-3 uppercase tracking-wide">
-                  Procesando
+                  Processing
                 </h2>
                 <LoadingCard awb={selectedAWB} />
               </div>
@@ -250,7 +250,7 @@ function App() {
             {currentError && !showLoading && selectedAWB && (
               <div className="mb-6">
                 <h2 className="text-sm font-medium text-[var(--muted-foreground)] mb-3 uppercase tracking-wide">
-                  Error en Tracking
+                  Tracking Error
                 </h2>
                 <ErrorCard
                   awb={selectedAWB}

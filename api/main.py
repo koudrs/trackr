@@ -1,16 +1,23 @@
 """FastAPI backend for AWB tracking."""
 
 import asyncio
+import os
 import re
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from api.carriers import get_carrier, list_carriers
 from api.models import TrackingError, TrackingResult
+
+# Static files directory (Vite build output)
+STATIC_DIR = Path(__file__).parent.parent / "front-vite" / "dist"
 
 # AWB format: XXX-XXXXXXXX (3 digits - 8 digits)
 AWB_PATTERN = re.compile(r"^(\d{3})-?(\d{8})$")
@@ -75,8 +82,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Mount static files if dist directory exists (production)
+if STATIC_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
 
-@app.get("/", response_model=HealthStatus)
+
+@app.get("/api", response_model=HealthStatus)
+@app.get("/api/", response_model=HealthStatus)
 async def root() -> HealthStatus:
     """Health check endpoint."""
     carriers = list_carriers()
@@ -93,13 +105,13 @@ async def root() -> HealthStatus:
     )
 
 
-@app.get("/health")
+@app.get("/api/health")
 async def health_check():
     """Simple health check for load balancers/monitoring."""
     return {"status": "healthy"}
 
 
-@app.get("/health/carriers")
+@app.get("/api/health/carriers")
 async def carriers_health() -> dict:
     """
     Check health of all carrier integrations.
@@ -174,14 +186,14 @@ async def carriers_health() -> dict:
     }
 
 
-@app.get("/carriers")
+@app.get("/api/carriers")
 async def get_carriers():
     """List all supported carriers."""
     return {"carriers": list_carriers()}
 
 
 @app.get(
-    "/track/{awb}",
+    "/api/track/{awb}",
     response_model=TrackingResult,
     responses={
         400: {"model": TrackingError, "description": "Invalid AWB format"},
@@ -237,6 +249,26 @@ async def track_awb(awb: str) -> TrackingResult:
                 "carrier": carrier.name,
             },
         )
+
+
+@app.get("/{full_path:path}")
+async def serve_spa(request: Request, full_path: str):
+    """Serve frontend SPA for all non-API routes."""
+    # Skip if static dir doesn't exist (dev mode)
+    if not STATIC_DIR.exists():
+        raise HTTPException(status_code=404, detail="Frontend not built")
+
+    # Try to serve the exact file first
+    file_path = STATIC_DIR / full_path
+    if file_path.is_file():
+        return FileResponse(file_path)
+
+    # Otherwise serve index.html (SPA routing)
+    index_path = STATIC_DIR / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path)
+
+    raise HTTPException(status_code=404, detail="Not found")
 
 
 def run_server():

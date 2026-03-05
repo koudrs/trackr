@@ -260,10 +260,10 @@ export function TrackingSidebar({
     }
   };
 
-  // Mobile sidebar classes
+  // Mobile sidebar classes with smooth animation
   const mobileClasses = isOpen
-    ? "translate-x-0"
-    : "-translate-x-full";
+    ? "translate-x-0 opacity-100"
+    : "-translate-x-full opacity-0 lg:opacity-100";
 
   // Split AWBs into two groups: En Vuelo (DEP) and Aterrizó (ARR)
   const enVueloAWBs = filteredAWBs.filter((t) => {
@@ -283,8 +283,8 @@ export function TrackingSidebar({
 
   if (trackedAWBs.length === 0) {
     return (
-      <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-[420px] h-screen border-r border-[var(--border)] bg-[var(--card)] flex flex-col transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${mobileClasses}`}>
-        <div className="p-5 border-b border-[var(--border)]">
+      <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-[85vw] max-w-[340px] lg:max-w-none lg:w-[420px] h-screen border-r border-[var(--border)] bg-[var(--card)] flex flex-col transform transition-all duration-300 ease-out lg:translate-x-0 ${mobileClasses}`}>
+        <div className="p-4 lg:p-5 border-b border-[var(--border)]">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="p-2 rounded-lg bg-blue-100">
@@ -299,7 +299,7 @@ export function TrackingSidebar({
             {onClose && (
               <button
                 onClick={onClose}
-                className="lg:hidden p-1.5 rounded-lg hover:bg-[var(--muted)] text-[var(--muted-foreground)]"
+                className="lg:hidden p-2 -mr-1 rounded-lg hover:bg-[var(--muted)] text-[var(--muted-foreground)] active:scale-95 transition-transform"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -485,7 +485,7 @@ export function TrackingSidebar({
   };
 
   return (
-    <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-[420px] h-screen border-r border-[var(--border)] bg-[var(--card)] flex flex-col overflow-hidden transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${mobileClasses}`}>
+    <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-[85vw] max-w-85 lg:max-w-none lg:w-105 h-screen border-r border-(--border) bg-(--card) flex flex-col overflow-hidden transform transition-all duration-300 ease-out lg:translate-x-0 ${mobileClasses}`}>
       {/* Compact Header */}
       <div className="px-3 py-2 border-b border-[var(--border)]">
         <div className="flex items-center gap-2">
@@ -547,8 +547,8 @@ export function TrackingSidebar({
             <Trash2 className="h-3.5 w-3.5 text-[var(--muted-foreground)]" />
           </button>
           {onClose && (
-            <button onClick={onClose} className="lg:hidden p-1 rounded hover:bg-[var(--muted)]">
-              <X className="h-4 w-4" />
+            <button onClick={onClose} className="lg:hidden p-2 -mr-1 rounded hover:bg-(--muted) active:scale-95 transition-transform">
+              <X className="h-5 w-5" />
             </button>
           )}
         </div>

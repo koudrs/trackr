@@ -1,5 +1,5 @@
 # Multi-stage build for Python API + Vite frontend
-# Optimized for Render deployment
+# Optimized for DigitalOcean/Render deployment
 
 # Stage 1: Frontend build (Vite)
 FROM node:20-alpine AS frontend-builder
@@ -10,7 +10,7 @@ RUN npm ci
 
 COPY front-vite/ .
 
-ARG VITE_API_URL
+ARG VITE_API_URL=/api
 ARG VITE_TURNSTILE_SITE_KEY
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_TURNSTILE_SITE_KEY=$VITE_TURNSTILE_SITE_KEY
@@ -26,7 +26,7 @@ RUN addgroup --system --gid 1001 appgroup \
 
 WORKDIR /app
 
-# Install Node.js runtime + tesseract for China Cargo OCR + deps for Chrome
+# Install tesseract for China Cargo OCR + deps for Chrome
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     tesseract-ocr \
@@ -46,8 +46,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 \
     libpango-1.0-0 \
     libcairo2 \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Python deps
@@ -67,9 +65,6 @@ COPY api/ ./api/
 # Copy frontend build artifacts (Vite static build)
 COPY --from=frontend-builder /app/front-vite/dist ./front-vite/dist
 
-# Install serve for static files
-RUN npm install -g serve
-
 # Set ownership and create temp dirs with proper permissions
 RUN chown -R appuser:appgroup /app \
     && mkdir -p /tmp/playwright \
@@ -85,7 +80,7 @@ EXPOSE 3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl -f http://localhost:3000/ || exit 1
+    CMD curl -f http://localhost:3000/api/health || exit 1
 
-# API on 8000 (internal), frontend on 3000 (exposed)
-CMD ["sh", "-c", "uvicorn api.main:app --host 0.0.0.0 --port 8000 & serve -s front-vite/dist -l 3000"]
+# Single uvicorn process serves both API (/api/*) and static frontend
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "3000"]
