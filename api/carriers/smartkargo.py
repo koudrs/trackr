@@ -49,10 +49,18 @@ class SmartKargoTracker(ScraplingTracker):
         """Track SmartKargo shipment via Scrapling."""
         result = self.empty_result(prefix, serial, TrackingSource.HTML)
 
-        url = f"{self.BASE_URL}?AWBPrefix={prefix}&AWBNo={serial}"
-        page, html, text = await self.fetch_page(url)
+        if not self.is_available():
+            result.status = "MAS Air temporarily unavailable"
+            result.events = []
+            return result
 
-        return self._parse_page(result, page, html, text)
+        try:
+            url = f"{self.BASE_URL}?AWBPrefix={prefix}&AWBNo={serial}"
+            page, html, text = await self.fetch_page(url)
+            return self._parse_page(result, page, html, text)
+        except Exception as e:
+            result.status = f"Tracking error: {str(e)[:50]}"
+            return result
 
     def _parse_page(self, result: TrackingResult, page, html: str, text: str) -> TrackingResult:
         """Parse SmartKargo page."""

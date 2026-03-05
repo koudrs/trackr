@@ -9,8 +9,30 @@ import httpx
 
 from api.models import StatusCode, TrackingResult, TrackingSource
 
-# Detect if running in container (Docker/Render)
-IS_CONTAINER = os.path.exists("/.dockerenv") or os.environ.get("RENDER", "")
+# Detect if running in container (Docker/Render/DigitalOcean/k8s)
+def _is_container() -> bool:
+    """Detect container environment."""
+    # Docker
+    if os.path.exists("/.dockerenv"):
+        return True
+    # Kubernetes (DigitalOcean, etc.)
+    if os.environ.get("KUBERNETES_SERVICE_HOST"):
+        return True
+    # Render
+    if os.environ.get("RENDER"):
+        return True
+    # DigitalOcean App Platform
+    if os.environ.get("DIGITALOCEAN_APP_PLATFORM"):
+        return True
+    # Check cgroup for docker/k8s
+    try:
+        with open("/proc/1/cgroup", "r") as f:
+            return "docker" in f.read() or "kubepods" in f.read()
+    except Exception:
+        pass
+    return False
+
+IS_CONTAINER = _is_container()
 
 
 class CarrierTracker(ABC):
@@ -109,12 +131,20 @@ class ScraplingTracker(CarrierTracker):
     - StealthyFetcher for Cloudflare/Akamai bypass
     - Adaptive CSS selectors that survive layout changes
     - Built-in retry logic
+
+    NOTE: Scrapling requires Playwright which needs more resources than
+    typically available in container environments. Use is_available() to check.
     """
 
     # Scrapling settings
     use_stealth: bool = True  # Use StealthyFetcher vs regular Fetcher
     wait_for_network: bool = True  # Wait for network idle
     headless: bool = True
+
+    @classmethod
+    def is_available(cls) -> bool:
+        """Check if Scrapling can run in current environment."""
+        return not IS_CONTAINER
 
     def _get_fetcher(self):
         """Get appropriate Scrapling fetcher."""

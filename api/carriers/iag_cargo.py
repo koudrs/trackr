@@ -50,10 +50,18 @@ class IAGCargoTracker(ScraplingTracker):
         """Track IAG Cargo shipment via Scrapling."""
         result = self.empty_result(prefix, serial, TrackingSource.HTML)
 
-        url = f"{self.BASE_URL}?awb.cia={prefix}&awb.cod={serial}"
-        page, html, text = await self.fetch_page(url)
+        if not self.is_available():
+            result.status = "IAG Cargo temporarily unavailable"
+            result.events = []
+            return result
 
-        return self._parse_page(result, page, text)
+        try:
+            url = f"{self.BASE_URL}?awb.cia={prefix}&awb.cod={serial}"
+            page, html, text = await self.fetch_page(url)
+            return self._parse_page(result, page, text)
+        except Exception as e:
+            result.status = f"Tracking error: {str(e)[:50]}"
+            return result
 
     def _parse_page(self, result: TrackingResult, page, text: str) -> TrackingResult:
         """Parse IAG Cargo page using Scrapling."""

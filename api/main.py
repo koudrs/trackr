@@ -10,7 +10,6 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from api.carriers import get_carrier, list_carriers
@@ -82,9 +81,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static files if dist directory exists (production)
-if STATIC_DIR.exists():
-    app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+# Note: Static files are served by the catch-all route at the bottom
 
 
 @app.get("/api", response_model=HealthStatus)
@@ -258,15 +255,30 @@ async def serve_spa(request: Request, full_path: str):
     if not STATIC_DIR.exists():
         raise HTTPException(status_code=404, detail="Frontend not built")
 
-    # Try to serve the exact file first
+    # Try to serve the exact file first (assets, vite.svg, etc.)
     file_path = STATIC_DIR / full_path
-    if file_path.is_file():
-        return FileResponse(file_path)
+    if file_path.is_file() and file_path.resolve().is_relative_to(STATIC_DIR.resolve()):
+        # Determine content type for common static files
+        suffix = file_path.suffix.lower()
+        media_types = {
+            ".js": "application/javascript",
+            ".css": "text/css",
+            ".svg": "image/svg+xml",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".ico": "image/x-icon",
+            ".json": "application/json",
+            ".woff": "font/woff",
+            ".woff2": "font/woff2",
+        }
+        media_type = media_types.get(suffix)
+        return FileResponse(file_path, media_type=media_type)
 
     # Otherwise serve index.html (SPA routing)
     index_path = STATIC_DIR / "index.html"
     if index_path.exists():
-        return FileResponse(index_path)
+        return FileResponse(index_path, media_type="text/html")
 
     raise HTTPException(status_code=404, detail="Not found")
 

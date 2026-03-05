@@ -65,10 +65,18 @@ class DHLAviationTracker(ScraplingTracker):
         """Track DHL Aviation shipment via Scrapling."""
         result = self.empty_result(prefix, serial, TrackingSource.HTML)
 
-        url = f"{self.BASE_URL}/{prefix}-{serial}"
-        page, html, text = await self.fetch_page(url)
+        if not self.is_available():
+            result.status = "DHL Aviation temporarily unavailable"
+            result.events = []
+            return result
 
-        return self._parse_page(result, html, text)
+        try:
+            url = f"{self.BASE_URL}/{prefix}-{serial}"
+            page, html, text = await self.fetch_page(url)
+            return self._parse_page(result, html, text)
+        except Exception as e:
+            result.status = f"Tracking error: {str(e)[:50]}"
+            return result
 
     def _parse_page(self, result: TrackingResult, html: str, text: str) -> TrackingResult:
         """Parse DHL Aviation page."""

@@ -39,23 +39,29 @@ class AFKLCargoTracker(CarrierTracker):
         """Track KLM/Air France shipment using Scrapling."""
         result = self.empty_result(prefix, serial, TrackingSource.HTML)
 
-        # Playwright crashes on Render due to resource limits
-        # Mark as temporarily unavailable
+        # Playwright/Scrapling requires more resources than available in container
+        # Return a helpful message instead of crashing
         if IS_CONTAINER:
-            result.status = "AF/KLM no disponible (requiere más recursos del servidor)"
+            result.status = "AF/KLM temporarily unavailable"
+            result.events = []
             return result
 
         awb = self.format_awb(prefix, serial)
         url = f"{self.BASE_URL}/{awb}"
 
-        # Run Scrapling in thread pool (it's synchronous)
-        loop = asyncio.get_event_loop()
-        html, text = await loop.run_in_executor(None, self._fetch_with_scrapling, url)
+        try:
+            # Run Scrapling in thread pool (it's synchronous)
+            loop = asyncio.get_event_loop()
+            html, text = await loop.run_in_executor(None, self._fetch_with_scrapling, url)
 
-        if not text:
+            if not text:
+                result.status = "No tracking data found"
+                return result
+
+            return self._parse_text(result, text, html)
+        except Exception as e:
+            result.status = f"Tracking error: {str(e)[:50]}"
             return result
-
-        return self._parse_text(result, text, html)
 
     def _fetch_with_scrapling(self, url: str) -> tuple[str, str]:
         """Fetch page using Scrapling StealthyFetcher."""

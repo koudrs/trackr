@@ -6,7 +6,7 @@ from datetime import datetime
 
 from api.models import StatusCode, TrackingEvent, TrackingResult, TrackingSource
 
-from .base import CarrierTracker
+from .base import CarrierTracker, IS_CONTAINER
 
 
 class LatamCargoTracker(CarrierTracker):
@@ -53,16 +53,27 @@ class LatamCargoTracker(CarrierTracker):
         """Track LATAM Cargo shipment via Scrapling."""
         result = self.empty_result(prefix, serial, TrackingSource.HTML)
 
-        url = f"{self.BASE_URL}?docNumber={serial}&docPrefix={prefix}&soType=MAWB"
-
-        # Run Scrapling in thread pool (synchronous)
-        loop = asyncio.get_event_loop()
-        html, text = await loop.run_in_executor(None, self._fetch_with_scrapling, url)
-
-        if not text:
+        # Scrapling/Playwright requires resources not available in container
+        if IS_CONTAINER:
+            result.status = "LATAM temporarily unavailable"
+            result.events = []
             return result
 
-        return self._parse_page(result, html, text)
+        url = f"{self.BASE_URL}?docNumber={serial}&docPrefix={prefix}&soType=MAWB"
+
+        try:
+            # Run Scrapling in thread pool (synchronous)
+            loop = asyncio.get_event_loop()
+            html, text = await loop.run_in_executor(None, self._fetch_with_scrapling, url)
+
+            if not text:
+                result.status = "No tracking data found"
+                return result
+
+            return self._parse_page(result, html, text)
+        except Exception as e:
+            result.status = f"Tracking error: {str(e)[:50]}"
+            return result
 
     def _fetch_with_scrapling(self, url: str) -> tuple[str, str]:
         """Fetch page using Scrapling StealthyFetcher."""

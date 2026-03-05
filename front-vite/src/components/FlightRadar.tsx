@@ -165,8 +165,8 @@ export function FlightRadar({ trackedAWBs, onSelect }: FlightRadarProps) {
         )}
       </div>
 
-      {/* Map */}
-      <div className="relative flex-1 min-h-28 rounded-lg overflow-hidden">
+      {/* Map - isolate creates new stacking context so Leaflet z-indexes don't escape */}
+      <div className="relative flex-1 min-h-28 rounded-lg overflow-hidden isolate">
         <MapContainer
           center={[20, 20]}
           zoom={1}
