@@ -7,6 +7,7 @@ from .base import CarrierTracker
 from .china_cargo import ChinaCargoTracker
 from .dhl_aviation import DHLAviationTracker
 from .iag_cargo import IAGCargoTracker
+from .latam import LatamCargoTracker
 from .smartkargo import SmartKargoTracker
 from .turkish import TurkishCargoTracker
 
@@ -20,6 +21,7 @@ _TRACKERS: list[CarrierTracker] = [
     SmartKargoTracker(),
     DHLAviationTracker(),
     IAGCargoTracker(),
+    LatamCargoTracker(),
 ]
 
 # Build prefix -> tracker mapping

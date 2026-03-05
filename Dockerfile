@@ -3,12 +3,10 @@
 
 # Stage 1: Frontend build (Vite)
 FROM node:20-alpine AS frontend-builder
-RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app/front-vite
 
-COPY front-vite/package.json front-vite/pnpm-lock.yaml ./
-RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile
+COPY front-vite/package.json front-vite/package-lock.json ./
+RUN npm ci
 
 COPY front-vite/ .
 
@@ -17,7 +15,7 @@ ARG VITE_TURNSTILE_SITE_KEY
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_TURNSTILE_SITE_KEY=$VITE_TURNSTILE_SITE_KEY
 
-RUN pnpm build
+RUN npm run build
 
 # Stage 2: Production runtime
 FROM python:3.12-slim AS runtime
@@ -65,7 +63,6 @@ RUN mkdir -p /app/.playwright /tmp/.X11-unix \
 
 # Copy API code
 COPY api/ ./api/
-COPY pyproject.toml .
 
 # Copy frontend build artifacts (Vite static build)
 COPY --from=frontend-builder /app/front-vite/dist ./front-vite/dist

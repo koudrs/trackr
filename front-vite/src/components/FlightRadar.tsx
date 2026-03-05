@@ -101,21 +101,23 @@ export function FlightRadar({ trackedAWBs, onSelect }: FlightRadarProps) {
     return status === "DEP" && (isRecentDeparture(t) || t.data?.destination === "PTY");
   });
 
-  if (activeFlights.length === 0) return null;
+  const hasFlights = activeFlights.length > 0;
+  const origins = hasFlights
+    ? [...new Set(activeFlights.map((f) => f.data?.origin).filter(Boolean))]
+    : [];
 
-  const origins = [...new Set(activeFlights.map((f) => f.data?.origin).filter(Boolean))];
+  const flightArc = generateArc(CHINA, PANAMA);
 
   // Ordenar por timestamp de despegue: más antiguo primero (más cerca de Panamá)
   const sortedFlights = [...activeFlights].sort((a, b) => {
     const timeA = a.data?.events[0]?.timestamp ? new Date(a.data.events[0].timestamp).getTime() : 0;
     const timeB = b.data?.events[0]?.timestamp ? new Date(b.data.events[0].timestamp).getTime() : 0;
-    return timeA - timeB; // Más antiguo primero
+    return timeA - timeB;
   });
 
   const displayFlights = sortedFlights.slice(0, 6);
-  const flightArc = generateArc(CHINA, PANAMA);
 
-  // Calcular posiciones de aviones en la curva (van de China a Panama)
+  // Calcular posiciones de aviones en la curva
   const planePositions = displayFlights.map((_, index) => {
     const t = displayFlights.length === 1 ? 0.5 : 0.15 + (index / (displayFlights.length - 1)) * 0.7;
     const pointIndex = Math.floor(t * (flightArc.length - 1));
@@ -124,11 +126,8 @@ export function FlightRadar({ trackedAWBs, onSelect }: FlightRadarProps) {
     const pos = flightArc[pointIndex];
     const next = flightArc[nextIndex];
 
-    // El avión va de China (derecha) a Panama (izquierda)
     const dLng = next[1] - pos[1];
     const dLat = next[0] - pos[0];
-    // El icono apunta hacia arriba (norte = 0°)
-    // atan2(x, y) para que 0° sea norte, rotación horaria
     const angle = Math.atan2(dLng, dLat) * (180 / Math.PI);
 
     return { pos, angle };
@@ -145,19 +144,25 @@ export function FlightRadar({ trackedAWBs, onSelect }: FlightRadarProps) {
                 <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" />
               </svg>
             </div>
-            <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center shadow border-2 border-white">
-              {activeFlights.length}
-            </span>
+            {hasFlights && (
+              <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center shadow border-2 border-white">
+                {activeFlights.length}
+              </span>
+            )}
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-[var(--foreground)]">Active Flights</h3>
-            <p className="text-[10px] text-[var(--muted-foreground)]">{origins.join(", ")} → PTY</p>
+            <h3 className="text-sm font-semibold text-[var(--foreground)]">Flight Radar</h3>
+            <p className="text-[10px] text-[var(--muted-foreground)]">
+              {hasFlights ? `${origins.join(", ")} → PTY` : "No active flights"}
+            </p>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-500/10 border border-green-500/30">
-          <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-          <span className="text-[10px] text-green-500 font-medium">LIVE</span>
-        </div>
+        {hasFlights && (
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-500/10 border border-green-500/30">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+            <span className="text-[10px] text-green-500 font-medium">LIVE</span>
+          </div>
+        )}
       </div>
 
       {/* Map */}
@@ -214,33 +219,45 @@ export function FlightRadar({ trackedAWBs, onSelect }: FlightRadarProps) {
         </MapContainer>
 
         {/* Labels sobre el mapa */}
-        <div className="absolute right-2 top-2 z-[1000]">
-          <span className="text-[8px] font-mono font-bold text-[var(--foreground)] bg-[var(--card)]/90 px-1.5 py-0.5 rounded shadow-sm">
-            {origins.length === 1 ? origins[0] : "CHINA"}
-          </span>
-        </div>
-        <div className="absolute left-2 bottom-2 z-[1000]">
-          <span className="text-[8px] font-mono font-bold text-white bg-red-600 px-1.5 py-0.5 rounded shadow-md">
-            PTY
-          </span>
-        </div>
+        {hasFlights && (
+          <>
+            <div className="absolute right-2 top-2 z-[1000]">
+              <span className="text-[8px] font-mono font-bold text-[var(--foreground)] bg-[var(--card)]/90 px-1.5 py-0.5 rounded shadow-sm">
+                {origins.length === 1 ? origins[0] : "CHINA"}
+              </span>
+            </div>
+            <div className="absolute left-2 bottom-2 z-[1000]">
+              <span className="text-[8px] font-mono font-bold text-white bg-red-600 px-1.5 py-0.5 rounded shadow-md">
+                PTY
+              </span>
+            </div>
+          </>
+        )}
       </div>
 
       {/* AWB chips */}
-      <div className="mt-2.5 flex flex-wrap gap-1.5">
-        {activeFlights.slice(0, 5).map((flight) => (
-          <button
-            key={flight.awb}
-            onClick={() => onSelect(flight.awb)}
-            className="text-[9px] px-2 py-0.5 rounded-full bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--accent)] transition-colors font-mono"
-          >
-            {flight.awb}
-          </button>
-        ))}
-        {activeFlights.length > 5 && (
-          <span className="text-[9px] px-2 py-0.5 text-[var(--muted-foreground)]">+{activeFlights.length - 5}</span>
-        )}
-      </div>
+      {hasFlights ? (
+        <div className="mt-2.5 flex flex-wrap gap-1.5">
+          {activeFlights.slice(0, 5).map((flight) => (
+            <button
+              key={flight.awb}
+              onClick={() => onSelect(flight.awb)}
+              className="text-[9px] px-2 py-0.5 rounded-full bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--accent)] transition-colors font-mono"
+            >
+              {flight.awb}
+            </button>
+          ))}
+          {activeFlights.length > 5 && (
+            <span className="text-[9px] px-2 py-0.5 text-[var(--muted-foreground)]">+{activeFlights.length - 5}</span>
+          )}
+        </div>
+      ) : (
+        <div className="mt-2.5 text-center">
+          <p className="text-[10px] text-[var(--muted-foreground)]">
+            Flights in transit will appear here
+          </p>
+        </div>
+      )}
     </div>
   );
 }

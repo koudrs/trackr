@@ -11,38 +11,38 @@ interface ErrorCardProps {
 export function ErrorCard({ awb, error, onRetry, onDismiss, isRetrying }: ErrorCardProps) {
   // Parse error for better display
   const getErrorInfo = (err: string) => {
-    if (err.includes("No se encontró")) {
+    if (err.includes("No se encontró") || err.includes("not found") || err.includes("Not found")) {
       return {
-        title: "AWB no encontrado",
-        description: "El número de guía no existe o aún no ha sido registrado en el sistema de la aerolínea.",
-        suggestion: "Verifica que el número sea correcto o intenta más tarde.",
+        title: "AWB Not Found",
+        description: "The tracking number does not exist or has not been registered in the airline system yet.",
+        suggestion: "Please verify the number is correct or try again later.",
       };
     }
     if (err.includes("timeout") || err.includes("Timeout")) {
       return {
-        title: "Tiempo de espera agotado",
-        description: "La aerolínea tardó demasiado en responder.",
-        suggestion: "El servicio puede estar lento. Intenta de nuevo en unos minutos.",
+        title: "Request Timeout",
+        description: "The airline took too long to respond.",
+        suggestion: "The service may be slow. Please try again in a few minutes.",
       };
     }
-    if (err.includes("no disponible")) {
+    if (err.includes("no disponible") || err.includes("unavailable")) {
       return {
-        title: "Servicio no disponible",
-        description: "El tracking de esta aerolínea no está disponible temporalmente.",
-        suggestion: "Intenta más tarde o contacta soporte si el problema persiste.",
+        title: "Service Unavailable",
+        description: "Tracking for this airline is temporarily unavailable.",
+        suggestion: "Please try again later or contact support if the issue persists.",
       };
     }
     if (err.includes("Network") || err.includes("fetch")) {
       return {
-        title: "Error de conexión",
-        description: "No se pudo conectar con el servidor.",
-        suggestion: "Verifica tu conexión a internet e intenta de nuevo.",
+        title: "Connection Error",
+        description: "Could not connect to the server.",
+        suggestion: "Please check your internet connection and try again.",
       };
     }
     return {
-      title: "Error al procesar",
+      title: "Processing Error",
       description: err,
-      suggestion: "Intenta de nuevo o contacta soporte si el problema persiste.",
+      suggestion: "Please try again or contact support if the issue persists.",
     };
   };
 
@@ -78,14 +78,14 @@ export function ErrorCard({ awb, error, onRetry, onDismiss, isRetrying }: ErrorC
 
       {onRetry && (
         <div className="border-t border-red-200 px-6 py-3 bg-red-100/50 flex items-center justify-between">
-          <span className="text-xs text-red-600">¿El problema persiste?</span>
+          <span className="text-xs text-red-600">Still having issues?</span>
           <button
             onClick={onRetry}
             disabled={isRetrying}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
           >
             <RefreshCw className={`h-3 w-3 ${isRetrying ? "animate-spin" : ""}`} />
-            {isRetrying ? "Reintentando..." : "Reintentar"}
+            {isRetrying ? "Retrying..." : "Retry"}
           </button>
         </div>
       )}

@@ -5,7 +5,7 @@ interface LoadingCardProps {
   message?: string;
 }
 
-export function LoadingCard({ awb, message = "Procesando tracking..." }: LoadingCardProps) {
+export function LoadingCard({ awb, message = "Processing tracking..." }: LoadingCardProps) {
   return (
     <div className="w-full rounded-lg border border-[var(--border)]/60 bg-[var(--card)] shadow-sm">
       <div className="p-6">
@@ -56,7 +56,7 @@ export function LoadingCard({ awb, message = "Procesando tracking..." }: Loading
       <div className="border-t border-[var(--border)] px-6 py-3 bg-blue-50/50">
         <div className="flex items-center gap-2 text-xs text-blue-600">
           <Loader2 className="h-3 w-3 animate-spin" />
-          <span>Conectando con la aerolínea...</span>
+          <span>Connecting to airline...</span>
         </div>
       </div>
     </div>

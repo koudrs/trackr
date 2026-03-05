@@ -310,7 +310,7 @@ export function TrackingSidebar({
           <div className="text-center">
             <Package className="h-12 w-12 mx-auto text-[var(--muted-foreground)]/50 mb-3" />
             <p className="text-sm text-[var(--muted-foreground)]">
-              Los AWBs que rastrees aparecerán aquí
+              Tracked AWBs will appear here
             </p>
             <p className="text-xs text-[var(--muted-foreground)]/70 mt-1">
               Auto-refresh every 5 minutes

@@ -67,7 +67,6 @@ Makefile
 requirements-dev.txt
 scripts/
 tests/
-pyproject.toml
 
 # Misc
 *.pem
