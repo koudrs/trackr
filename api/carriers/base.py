@@ -159,21 +159,10 @@ class ScraplingTracker(CarrierTracker):
         if self.use_stealth:
             from scrapling.fetchers import StealthyFetcher
 
-            # Container-specific options (Docker/Render/DigitalOcean)
             fetch_kwargs = {
                 "headless": self.headless,
                 "network_idle": self.wait_for_network,
             }
-            if IS_CONTAINER:
-                # Fix for Docker shared memory issues
-                # extra_flags must be a tuple (Scrapling concatenates with DEFAULT_ARGS tuple)
-                fetch_kwargs["extra_flags"] = (
-                    "--no-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--disable-gpu",
-                    "--no-zygote",
-                    "--single-process",
-                )
 
             page = StealthyFetcher.fetch(url, **fetch_kwargs)
         else:

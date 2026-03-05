@@ -82,22 +82,8 @@ class LatamCargoTracker(CarrierTracker):
         fetch_kwargs = {
             "headless": True,
             "network_idle": True,
-            "timeout": 60000,  # 60 seconds for Cloudflare challenges
-            "wait_selector": "table, .tracking-events, [class*='event'], [class*='status']",
-            "wait_selector_state": "attached",
+            "timeout": 60000,
         }
-
-        # Docker/container fixes for shared memory issues
-        # extra_flags must be a tuple (Scrapling concatenates with DEFAULT_ARGS tuple)
-        if IS_CONTAINER:
-            fetch_kwargs["extra_flags"] = (
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu",
-                "--no-zygote",
-                "--single-process",
-            )
-            logger.info(f"[LATAM] Container mode enabled with flags: {fetch_kwargs['extra_flags']}")
 
         try:
             page = StealthyFetcher.fetch(url, **fetch_kwargs)
@@ -105,7 +91,6 @@ class LatamCargoTracker(CarrierTracker):
             text = page.get_all_text()
 
             logger.info(f"[LATAM] Fetch success - HTML length: {len(html)}, Text length: {len(text)}")
-            logger.debug(f"[LATAM] Text preview: {text[:500]}...")
 
             return html, text
         except Exception as e:
