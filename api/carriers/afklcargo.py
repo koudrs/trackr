@@ -68,9 +68,8 @@ class AFKLCargoTracker(CarrierTracker):
 
         fetch_kwargs = {
             "headless": True,
-            "load_dom": True,  # Wait for JS to execute
-            "timeout": 20000,
-            "disable_resources": True,  # Skip images, fonts, media, stylesheets
+            "network_idle": True,  # Wait for XHR/fetch calls to complete (React app)
+            "timeout": 30000,
         }
 
         try:
