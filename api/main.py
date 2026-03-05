@@ -1,8 +1,10 @@
 """FastAPI backend for AWB tracking."""
 
 import asyncio
+import logging
 import os
 import re
+import sys
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -14,6 +16,14 @@ from pydantic import BaseModel
 
 from api.carriers import get_carrier, list_carriers
 from api.models import TrackingError, TrackingResult
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+logger = logging.getLogger(__name__)
 
 # Static files directory (Vite build output)
 STATIC_DIR = Path(__file__).parent.parent / "front-vite" / "dist"
@@ -235,9 +245,12 @@ async def track_awb(awb: str) -> TrackingResult:
 
     # Call carrier API
     try:
+        logger.info(f"Tracking AWB {prefix}-{serial} via {carrier.name}")
         result = await carrier.track(prefix, serial)
+        logger.info(f"Tracking result for {prefix}-{serial}: origin={result.origin}, dest={result.destination}, events={len(result.events)}")
         return result
     except Exception as e:
+        logger.error(f"Tracking error for {prefix}-{serial}: {type(e).__name__}: {e}")
         raise HTTPException(
             status_code=502,
             detail={

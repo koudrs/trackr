@@ -1,12 +1,15 @@
 """KLM / Air France Cargo tracking (prefixes 074, 057, 129)."""
 
 import asyncio
+import logging
 import re
 from datetime import datetime
 
 from api.models import StatusCode, TrackingEvent, TrackingResult, TrackingSource
 
 from .base import CarrierTracker, IS_CONTAINER
+
+logger = logging.getLogger(__name__)
 
 
 class AFKLCargoTracker(CarrierTracker):
@@ -60,23 +63,40 @@ class AFKLCargoTracker(CarrierTracker):
         """Fetch page using Scrapling StealthyFetcher."""
         from scrapling.fetchers import StealthyFetcher
 
+        logger.info(f"[AFKL] Fetching URL: {url}")
+        logger.info(f"[AFKL] IS_CONTAINER: {IS_CONTAINER}")
+
         fetch_kwargs = {
             "headless": True,
             "network_idle": True,
+            "timeout": 60000,  # 60 seconds for Akamai WAF challenges
+            "wait_selector": ".timeline, [class*='shipment'], [class*='event'], table",
+            "wait_selector_state": "attached",
         }
 
         # Docker/container fixes for shared memory issues
         if IS_CONTAINER:
             fetch_kwargs["chromium_sandbox"] = False
-            fetch_kwargs["extra_args"] = [
+            fetch_kwargs["extra_flags"] = [
                 "--disable-dev-shm-usage",
                 "--disable-gpu",
                 "--no-zygote",
                 "--single-process",
             ]
+            logger.info(f"[AFKL] Container mode enabled with flags: {fetch_kwargs['extra_flags']}")
 
-        page = StealthyFetcher.fetch(url, **fetch_kwargs)
-        return page.html_content, page.get_all_text()
+        try:
+            page = StealthyFetcher.fetch(url, **fetch_kwargs)
+            html = page.html_content
+            text = page.get_all_text()
+
+            logger.info(f"[AFKL] Fetch success - HTML length: {len(html)}, Text length: {len(text)}")
+            logger.debug(f"[AFKL] Text preview: {text[:500]}...")
+
+            return html, text
+        except Exception as e:
+            logger.error(f"[AFKL] Fetch error: {type(e).__name__}: {e}")
+            raise
 
     def _parse_text(self, result: TrackingResult, text: str, html: str) -> TrackingResult:
         """Parse tracking data from page text content."""

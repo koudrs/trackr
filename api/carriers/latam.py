@@ -1,12 +1,15 @@
 """LATAM Cargo tracking (LA - prefix 045)."""
 
 import asyncio
+import logging
 import re
 from datetime import datetime
 
 from api.models import StatusCode, TrackingEvent, TrackingResult, TrackingSource
 
 from .base import CarrierTracker, IS_CONTAINER
+
+logger = logging.getLogger(__name__)
 
 
 class LatamCargoTracker(CarrierTracker):
@@ -73,23 +76,40 @@ class LatamCargoTracker(CarrierTracker):
         """Fetch page using Scrapling StealthyFetcher."""
         from scrapling.fetchers import StealthyFetcher
 
+        logger.info(f"[LATAM] Fetching URL: {url}")
+        logger.info(f"[LATAM] IS_CONTAINER: {IS_CONTAINER}")
+
         fetch_kwargs = {
             "headless": True,
-            "network_idle": True,  # Need to wait for data to load
+            "network_idle": True,
+            "timeout": 60000,  # 60 seconds for Cloudflare challenges
+            "wait_selector": "table, .tracking-events, [class*='event'], [class*='status']",
+            "wait_selector_state": "attached",
         }
 
         # Docker/container fixes for shared memory issues
         if IS_CONTAINER:
             fetch_kwargs["chromium_sandbox"] = False
-            fetch_kwargs["extra_args"] = [
+            fetch_kwargs["extra_flags"] = [
                 "--disable-dev-shm-usage",
                 "--disable-gpu",
                 "--no-zygote",
                 "--single-process",
             ]
+            logger.info(f"[LATAM] Container mode enabled with flags: {fetch_kwargs['extra_flags']}")
 
-        page = StealthyFetcher.fetch(url, **fetch_kwargs)
-        return page.html_content, page.get_all_text()
+        try:
+            page = StealthyFetcher.fetch(url, **fetch_kwargs)
+            html = page.html_content
+            text = page.get_all_text()
+
+            logger.info(f"[LATAM] Fetch success - HTML length: {len(html)}, Text length: {len(text)}")
+            logger.debug(f"[LATAM] Text preview: {text[:500]}...")
+
+            return html, text
+        except Exception as e:
+            logger.error(f"[LATAM] Fetch error: {type(e).__name__}: {e}")
+            raise
 
     def _parse_page(self, result: TrackingResult, html: str, text: str) -> TrackingResult:
         """Parse LATAM Cargo tracking page."""

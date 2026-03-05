@@ -167,7 +167,7 @@ class ScraplingTracker(CarrierTracker):
             if IS_CONTAINER:
                 fetch_kwargs["chromium_sandbox"] = False
                 # Fix for Docker shared memory issues
-                fetch_kwargs["extra_args"] = [
+                fetch_kwargs["extra_flags"] = [
                     "--disable-dev-shm-usage",
                     "--disable-gpu",
                     "--no-zygote",
