@@ -82,7 +82,8 @@ class LatamCargoTracker(CarrierTracker):
         fetch_kwargs = {
             "headless": True,
             "network_idle": True,
-            "timeout": 60000,
+            "timeout": 45000,
+            "disable_resources": True,  # Skip images, fonts, media, stylesheets
         }
 
         try:

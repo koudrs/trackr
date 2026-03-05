@@ -162,6 +162,7 @@ class ScraplingTracker(CarrierTracker):
             fetch_kwargs = {
                 "headless": self.headless,
                 "network_idle": self.wait_for_network,
+                "disable_resources": True,  # Skip images, fonts, media, stylesheets
             }
 
             page = StealthyFetcher.fetch(url, **fetch_kwargs)
