@@ -66,7 +66,9 @@ COPY api/ ./api/
 COPY --from=frontend-builder /app/front-vite/dist ./front-vite/dist
 
 # Set ownership and create temp dirs with proper permissions
-RUN chown -R appuser:appgroup /app \
+# Create XDG directories for Chrome crashpad handler (Chrome 128+)
+RUN mkdir -p /app/.config /app/.cache /app/.local/share \
+    && chown -R appuser:appgroup /app \
     && mkdir -p /tmp/playwright \
     && chown -R appuser:appgroup /tmp/playwright
 
@@ -75,6 +77,13 @@ USER appuser
 # Environment for headless Chrome in containers
 ENV DISPLAY=:99
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+# Fix Chrome crashpad handler in containers (Chrome 128+)
+ENV HOME=/app
+ENV XDG_CONFIG_HOME=/app/.config
+ENV XDG_CACHE_HOME=/app/.cache
+ENV XDG_DATA_HOME=/app/.local/share
+# Container detection for Scrapling
+ENV DIGITALOCEAN_APP_PLATFORM=true
 
 EXPOSE 3000
 
