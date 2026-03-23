@@ -180,7 +180,7 @@ class ScraplingTracker(CarrierTracker):
         Returns:
             Tuple of (page_object, html_content, text_content)
         """
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._fetch_sync, url)
 
     def css(self, page, selector: str, adaptive: bool = True):
