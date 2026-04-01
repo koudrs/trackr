@@ -89,7 +89,7 @@ class AmerijetTracker(ScraplingTracker):
                 timestamp=timestamp,
                 status_code=status_code,
                 description=item.get("TMEVENTDESC", ""),
-                location=item.get("TMORIGIN") or item.get("TMDESTINATION"),
+                location=item.get("TMSTATION"),  # Station where event occurred
                 flight=item.get("TMFLIGHTNUMBER"),
                 pieces=self._parse_int(item.get("TMNUMBEROFPIECES")),
             )

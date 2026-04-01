@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import re
 from datetime import datetime
 
@@ -10,6 +11,9 @@ from api.models import StatusCode, TrackingEvent, TrackingResult, TrackingSource
 from .base import CarrierTracker, IS_CONTAINER
 
 logger = logging.getLogger(__name__)
+
+# ScraperAPI for proxy rotation (datacenter IPs get blocked)
+SCRAPER_API_KEY = os.getenv("SCRAPPER_API_KEY", "")
 
 
 class AFKLCargoTracker(CarrierTracker):
@@ -39,16 +43,20 @@ class AFKLCargoTracker(CarrierTracker):
     }
 
     async def track(self, prefix: str, serial: str) -> TrackingResult:
-        """Track KLM/Air France shipment using Scrapling."""
+        """Track KLM/Air France shipment using ScraperAPI or Scrapling fallback."""
         result = self.empty_result(prefix, serial, TrackingSource.HTML)
 
         awb = self.format_awb(prefix, serial)
         url = f"{self.BASE_URL}/{awb}"
 
         try:
-            # Run Scrapling in thread pool (it's synchronous)
-            loop = asyncio.get_event_loop()
-            html, text = await loop.run_in_executor(None, self._fetch_with_scrapling, url)
+            # Use ScraperAPI if available (bypasses datacenter IP blocks)
+            if SCRAPER_API_KEY:
+                html, text = await self._fetch_with_scraper_api(url)
+            else:
+                # Fallback to Scrapling (works locally, blocked on datacenter)
+                loop = asyncio.get_event_loop()
+                html, text = await loop.run_in_executor(None, self._fetch_with_scrapling, url)
 
             if not text:
                 result.status = "No tracking data found"
@@ -59,16 +67,40 @@ class AFKLCargoTracker(CarrierTracker):
             result.status = f"Tracking error: {str(e)[:50]}"
             return result
 
+    async def _fetch_with_scraper_api(self, url: str) -> tuple[str, str]:
+        """Fetch page using ScraperAPI with JS rendering."""
+        import httpx
+        from bs4 import BeautifulSoup
+
+        api_url = "http://api.scraperapi.com"
+        params = {
+            "api_key": SCRAPER_API_KEY,
+            "url": url,
+            "render": "true",  # JS rendering for React app
+        }
+
+        logger.info(f"[AFKL] Fetching via ScraperAPI: {url}")
+
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            response = await client.get(api_url, params=params)
+            response.raise_for_status()
+            html = response.text
+
+        soup = BeautifulSoup(html, "html.parser")
+        text = soup.get_text(separator="\n", strip=True)
+
+        logger.info(f"[AFKL] ScraperAPI success - HTML: {len(html)}, Text: {len(text)}")
+        return html, text
+
     def _fetch_with_scrapling(self, url: str) -> tuple[str, str]:
-        """Fetch page using Scrapling StealthyFetcher."""
+        """Fetch page using Scrapling StealthyFetcher (fallback for local dev)."""
         from scrapling.fetchers import StealthyFetcher
 
-        logger.info(f"[AFKL] Fetching URL: {url}")
-        logger.info(f"[AFKL] IS_CONTAINER: {IS_CONTAINER}")
+        logger.info(f"[AFKL] Fetching via Scrapling: {url}")
 
         fetch_kwargs = {
             "headless": True,
-            "network_idle": True,  # Wait for XHR/fetch calls to complete (React app)
+            "network_idle": True,
             "timeout": 30000,
         }
 
@@ -77,11 +109,10 @@ class AFKLCargoTracker(CarrierTracker):
             html = page.html_content
             text = page.get_all_text()
 
-            logger.info(f"[AFKL] Fetch success - HTML length: {len(html)}, Text length: {len(text)}")
-
+            logger.info(f"[AFKL] Scrapling success - HTML: {len(html)}, Text: {len(text)}")
             return html, text
         except Exception as e:
-            logger.error(f"[AFKL] Fetch error: {type(e).__name__}: {e}")
+            logger.error(f"[AFKL] Scrapling error: {type(e).__name__}: {e}")
             raise
 
     def _parse_text(self, result: TrackingResult, text: str, html: str) -> TrackingResult:
