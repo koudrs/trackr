@@ -8,6 +8,7 @@ from .cargolux import CargoluxTracker
 from .china_cargo import ChinaCargoTracker
 from .dhl_aviation import DHLAviationTracker
 from .iag_cargo import IAGCargoTracker
+from .koreanair import KoreanAirTracker
 from .latam import LatamCargoTracker
 from .smartkargo import SmartKargoTracker
 from .turkish import TurkishCargoTracker
@@ -16,6 +17,7 @@ from .turkish import TurkishCargoTracker
 _TRACKERS: list[CarrierTracker] = [
     AmerijetTracker(),
     CargoluxTracker(),
+    KoreanAirTracker(),
     TurkishCargoTracker(),
     AtlasAirTracker(),
     ChinaCargoTracker(),
