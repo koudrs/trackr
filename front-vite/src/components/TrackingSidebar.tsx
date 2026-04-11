@@ -313,7 +313,7 @@ export function TrackingSidebar({
               Tracked AWBs will appear here
             </p>
             <p className="text-xs text-[var(--muted-foreground)]/70 mt-1">
-              Auto-refresh every 5 minutes
+              Auto-refresh every 30 min (in-transit only)
             </p>
           </div>
         </div>
@@ -623,7 +623,7 @@ export function TrackingSidebar({
       {/* Footer */}
       <div className="p-3 border-t border-[var(--border)] bg-[var(--muted)]/30">
         <div className="flex items-center justify-between text-[10px] text-[var(--muted-foreground)]">
-          <span>Auto-refresh: 5 min</span>
+          <span>Auto-refresh: 30 min (in-transit)</span>
           <span className="flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
             Active

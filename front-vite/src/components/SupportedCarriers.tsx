@@ -47,7 +47,7 @@ export function SupportedCarriers() {
           </div>
           <div className="flex items-center gap-2 p-3 rounded-lg bg-white/70 border border-white">
             <div className="w-6 h-6 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center">3</div>
-            <span className="text-xs text-gray-700">Updates every 5 min</span>
+            <span className="text-xs text-gray-700">Updates every 30 min</span>
           </div>
         </div>
 

@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { trackAWB, type TrackingResult } from "../lib/api";
 
-const STORAGE_KEY = "tracked_awbs";
-const REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutos
+const REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutos
+
+// Status codes that indicate shipment is in transit (should auto-refresh)
+const IN_TRANSIT_STATUSES = ["DEP", "ARR", "MAN", "RCS"];
 
 export interface TrackedAWB {
   awb: string;
@@ -19,27 +21,6 @@ export function useTrackedAWBs() {
   const [trackedAWBs, setTrackedAWBs] = useState<TrackedAWB[]>([]);
   const intervalRef = useRef<number | null>(null);
 
-  // Load from localStorage on mount
-  useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as TrackedAWB[];
-        setTrackedAWBs(parsed.map(t => ({ ...t, isLoading: false })));
-      } catch {
-        // ignore
-      }
-    }
-  }, []);
-
-  // Save to localStorage when trackedAWBs changes
-  useEffect(() => {
-    if (trackedAWBs.length > 0) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(trackedAWBs));
-    } else {
-      localStorage.removeItem(STORAGE_KEY);
-    }
-  }, [trackedAWBs]);
 
   const refreshAWB = useCallback(async (awb: string) => {
     setTrackedAWBs(prev =>
@@ -172,10 +153,14 @@ export function useTrackedAWBs() {
     setTrackedAWBs([]);
   }, []);
 
-  // Auto-refresh all AWBs
+  // Auto-refresh only AWBs that are in transit (DEP, ARR, MAN, RCS)
   const refreshAll = useCallback(async () => {
     for (const tracked of trackedAWBs) {
-      if (!tracked.isLoading) {
+      if (tracked.isLoading) continue;
+
+      // Only auto-refresh shipments in transit
+      const latestStatus = tracked.data?.events?.[0]?.status_code;
+      if (latestStatus && IN_TRANSIT_STATUSES.includes(latestStatus)) {
         await refreshAWB(tracked.awb);
       }
     }
