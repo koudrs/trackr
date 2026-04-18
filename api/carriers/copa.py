@@ -3,18 +3,19 @@
 import re
 from datetime import datetime
 
+import httpx
+
 from api.models import StatusCode, TrackingEvent, TrackingResult, TrackingSource
 
-from .smartkargo import SmartKargoTracker
+from .base import CarrierTracker
 
 
-class CopaCargoTracker(SmartKargoTracker):
+class CopaCargoTracker(CarrierTracker):
     """
     Copa Cargo (CM) - prefix 230.
 
     Uses SmartKargo platform: https://copa.smartkargo.com/
-    Copa requires encrypted URLs and redirects, so we use StealthyFetcher.
-    Copa has different table structure than MAS Air SmartKargo.
+    Copa redirects to encrypted URL - we use httpx with follow_redirects.
     """
 
     name = "Copa Cargo"
@@ -23,8 +24,48 @@ class CopaCargoTracker(SmartKargoTracker):
 
     BASE_URL = "https://copa.smartkargo.com/FrmAWBTracking.aspx"
 
-    # Copa requires browser to handle encrypted redirect
-    use_stealth = True
+    STATUS_MAP = {
+        **CarrierTracker.STATUS_MAP,
+        "booked": StatusCode.BKD,
+        "received": StatusCode.RCS,
+        "accepted": StatusCode.RCS,
+        "manifested": StatusCode.MAN,
+        "departed": StatusCode.DEP,
+        "arrived": StatusCode.ARR,
+        "transferred": StatusCode.RCF,
+        "notified": StatusCode.NFD,
+        "delivered": StatusCode.DLV,
+    }
+
+    async def track(self, prefix: str, serial: str) -> TrackingResult:
+        """Track Copa shipment via httpx (follows redirects automatically)."""
+        result = self.empty_result(prefix, serial, TrackingSource.HTML)
+
+        url = f"{self.BASE_URL}?AWBPrefix={prefix}&AWBNo={serial}"
+
+        try:
+            async with httpx.AsyncClient(
+                timeout=30.0,
+                follow_redirects=True,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                },
+            ) as client:
+                response = await client.get(url)
+                response.raise_for_status()
+                html = response.text
+
+            # Extract text from HTML
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html, "html.parser")
+            text = soup.get_text(separator="\n", strip=True)
+
+            return self._parse_page(result, None, html, text)
+
+        except Exception as e:
+            result.status = f"Tracking error: {str(e)[:50]}"
+            return result
 
     def _parse_page(self, result: TrackingResult, page, html: str, text: str) -> TrackingResult:
         """Parse Copa SmartKargo page - different structure than MAS Air."""
@@ -32,14 +73,20 @@ class CopaCargoTracker(SmartKargoTracker):
         if "no record" in text.lower() or "invalid" in text.lower():
             return result
 
-        # Extract origin/destination from text (ICN → PTY format)
-        # Text contains: "230-67675193 ( ICN PTY 77 P 1602.00 Kgs"
-        route_match = re.search(r'\(\s*([A-Z]{3})\s+([A-Z]{3})\s+(\d+)\s*P\s+([\d.]+)\s*Kgs', text)
-        if route_match:
-            result.origin = route_match.group(1)
-            result.destination = route_match.group(2)
-            result.pieces = int(route_match.group(3))
-            result.weight = float(route_match.group(4))
+        # Extract from HTML labels (more reliable than text parsing)
+        origin_match = re.search(r'lblOrigin[^>]*>([A-Z]{3})<', html)
+        dest_match = re.search(r'lblDestination[^>]*>([A-Z]{3})<', html)
+        pcs_match = re.search(r'lblPcs[^>]*>(\d+)', html)
+        weight_match = re.search(r'lblGrossWt[^>]*>([\d.]+)', html)
+
+        if origin_match:
+            result.origin = origin_match.group(1)
+        if dest_match:
+            result.destination = dest_match.group(1)
+        if pcs_match:
+            result.pieces = int(pcs_match.group(1))
+        if weight_match:
+            result.weight = float(weight_match.group(1))
 
         # Extract status
         status_match = re.search(r'Last Activity\s*\n?\s*([^\n]+)', text)
