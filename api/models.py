@@ -67,3 +67,42 @@ class TrackingError(BaseModel):
     error: str
     carrier: str | None = None
     suggestion: str | None = None  # e.g., direct link to carrier portal
+
+
+class FlightPosition(BaseModel):
+    """Live aircraft position from an ADS-B feed (airplanes.live)."""
+
+    callsign: str  # ADS-B callsign, e.g. "CMP473"
+    flight: str | None = None  # IATA flight number we matched it to, e.g. "CM473"
+    awb: str | None = None  # Tracked AWB this flight belongs to (XXX-XXXXXXXX)
+    hex: str | None = None  # ICAO24 transponder address
+    registration: str | None = None  # Tail number
+    aircraft_type: str | None = None  # ICAO type code, e.g. "B763"
+    lat: float
+    lng: float
+    track: float | None = None  # True heading in degrees (0-359), for icon rotation
+    ground_speed: float | None = None  # knots
+    altitude: float | None = None  # baro altitude in feet (None when on ground)
+    vertical_rate: float | None = None  # feet/min: + climbing, - descending, ~0 cruise
+    aircraft_desc: str | None = None  # human description, e.g. "BOEING 767-300"
+    on_ground: bool = False
+    seen_pos: float | None = None  # seconds since last position update
+
+    # Route + timing — derived from the tracked AWB (origin/dest/DEP time) and
+    # current live position. ETA/remaining are ESTIMATES (distance / speed).
+    origin: str | None = None  # IATA, from the shipment
+    destination: str | None = None  # IATA, from the shipment
+    distance_remaining_nm: float | None = None  # great-circle to destination
+    distance_flown_pct: float | None = None  # 0-100, rough progress along the route
+    eta_minutes: float | None = None  # estimated minutes to destination (~approx)
+    flight_minutes: float | None = None  # minutes since DEP event (actual time aloft)
+
+
+class FlightPositionList(BaseModel):
+    """Response for GET /api/flights."""
+
+    flights: list[FlightPosition] = Field(default_factory=list)
+    source: str = "airplanes.live"
+    fetched_at: datetime = Field(default_factory=datetime.utcnow)
+    requested: int = 0  # how many flight ids were requested
+    matched: int = 0  # how many got a live position

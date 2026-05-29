@@ -1,15 +1,18 @@
 import { useState, useEffect } from "react";
-import { Menu, Moon, Sun } from "lucide-react";
+import { Menu, Moon, Sun, Radar, List } from "lucide-react";
 import { TrackingForm } from "./components/TrackingForm";
 import { TrackingResultCard } from "./components/TrackingResult";
 import { SupportedCarriers } from "./components/SupportedCarriers";
 import { TrackingSidebar } from "./components/TrackingSidebar";
 import { Dashboard } from "./components/Dashboard";
 import { FlightRadar } from "./components/FlightRadar";
+import { LiveRadarView } from "./components/LiveRadarView";
 import { LoadingCard } from "./components/LoadingCard";
 import { ErrorCard } from "./components/ErrorCard";
 import { useTrackedAWBs } from "./hooks/useTrackedAWBs";
 import type { TrackingResult } from "./lib/api";
+
+type View = "tracking" | "radar";
 
 function App() {
   const [selectedResult, setSelectedResult] = useState<TrackingResult | null>(null);
@@ -17,10 +20,18 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedAWB, setSelectedAWB] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [view, setView] = useState<View>(() => {
+    const saved = localStorage.getItem("view");
+    return saved === "radar" ? "radar" : "tracking";
+  });
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem("darkMode");
     return saved ? JSON.parse(saved) : false;
   });
+
+  useEffect(() => {
+    localStorage.setItem("view", view);
+  }, [view]);
 
   useEffect(() => {
     localStorage.setItem("darkMode", JSON.stringify(darkMode));
@@ -192,6 +203,34 @@ function App() {
                 </div>
               </div>
 
+              {/* View switch: Shipments / Radar */}
+              <div className="flex items-center rounded-lg border border-[var(--border)] bg-[var(--muted)] p-0.5">
+                <button
+                  onClick={() => setView("tracking")}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    view === "tracking"
+                      ? "bg-[var(--card)] text-[var(--foreground)] shadow-sm"
+                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                  }`}
+                  title="Shipments"
+                >
+                  <List className="h-4 w-4" />
+                  <span className="hidden md:inline">Shipments</span>
+                </button>
+                <button
+                  onClick={() => setView("radar")}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    view === "radar"
+                      ? "bg-[var(--card)] text-[var(--foreground)] shadow-sm"
+                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                  }`}
+                  title="Live Radar"
+                >
+                  <Radar className="h-4 w-4" />
+                  <span className="hidden md:inline">Radar</span>
+                </button>
+              </div>
+
               {/* Dark mode toggle */}
               <button
                 onClick={() => setDarkMode(!darkMode)}
@@ -318,6 +357,16 @@ function App() {
           </div>
         </footer>
       </main>
+
+      {/* Full-screen live radar (rendered above everything via fixed inset-0) */}
+      {view === "radar" && (
+        <LiveRadarView
+          trackedAWBs={trackedAWBs}
+          selectedAWB={selectedAWB}
+          onSelect={handleSelectFromSidebar}
+          onClose={() => setView("tracking")}
+        />
+      )}
     </div>
   );
 }

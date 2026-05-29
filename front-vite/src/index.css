@@ -39,6 +39,28 @@
   --ring: #525252;
 }
 
+/* Expose the CSS-variable theme as Tailwind color tokens so shadcn-style
+   components (mapcn) that use bg-background / text-muted-foreground / border-border
+   resolve correctly and still react to the .dark class at runtime. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
 * {
   border-color: var(--border);
 }
@@ -88,4 +110,13 @@ body {
 .leaflet-tooltip-top.flight-tooltip::before {
   border-top-color: #1e293b !important;
   margin-left: -6px;
+}
+
+/* MapLibre (mapcn) live radar */
+.maplibregl-map {
+  font-family: inherit;
+}
+/* Keep the attribution readable but subtle on both themes */
+.maplibregl-ctrl-attrib {
+  font-size: 9px;
 }
