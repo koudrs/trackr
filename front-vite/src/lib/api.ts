@@ -66,6 +66,8 @@ export interface FlightPosition {
   distance_flown_pct: number | null;
   eta_minutes: number | null;
   flight_minutes: number | null;
+  // Real flown trail from OpenSky, as [[lng, lat], ...]. Empty when unavailable.
+  trail: [number, number][];
 }
 
 export interface FlightPositionList {

@@ -35,6 +35,26 @@ interface LiveRadarViewProps {
   onClose: () => void; // back to Shipments (full-screen radar)
 }
 
+/**
+ * Make a polyline's longitudes continuous so it never jumps ~360deg across the
+ * antimeridian (which makes MapLibre draw the line the long way around the globe).
+ * Each point is shifted by whole turns of 360deg to stay within 180deg of the
+ * previous one. renderWorldCopies then shows it correctly across the dateline.
+ */
+function unwrapLng(pts: [number, number][]): [number, number][] {
+  if (pts.length === 0) return pts;
+  const out: [number, number][] = [pts[0]];
+  let prev = pts[0][0];
+  for (let i = 1; i < pts.length; i++) {
+    let lng = pts[i][0];
+    while (lng - prev > 180) lng -= 360;
+    while (lng - prev < -180) lng += 360;
+    out.push([lng, pts[i][1]]);
+    prev = lng;
+  }
+  return out;
+}
+
 /** Great-circle polyline between two [lng,lat] points (for planned route lines). */
 function greatCircle(a: [number, number], b: [number, number], n = 48): [number, number][] {
   const toRad = Math.PI / 180, toDeg = 180 / Math.PI;
@@ -55,7 +75,8 @@ function greatCircle(a: [number, number], b: [number, number], n = 48): [number,
     const z = A * Math.sin(lat1) + B * Math.sin(lat2);
     pts.push([Math.atan2(y, x) * toDeg, Math.atan2(z, Math.sqrt(x * x + y * y)) * toDeg]);
   }
-  return pts;
+  // Keep longitudes continuous so antimeridian crossings draw the short way.
+  return unwrapLng(pts);
 }
 
 // AWB format XXX-XXXXXXXX (hyphen optional on input).
@@ -203,14 +224,14 @@ export function LiveRadarView({ trackedAWBs, selectedAWB, onSelect, onClose }: L
   // Airport coordinates (lazy-loaded) for route lines + at-airport pins.
   const [airports, setAirports] = useState<Record<string, [number, number]>>({});
 
-  // In-air pairs for the radar's own added shipments (those currently flying).
+  // Pairs for the radar's own added shipments. FR24 has historical tracks, so
+  // we send any shipment with a flight number — in-transit OR already delivered
+  // (a delivered AWB still shows its real flown route).
   const activePairs = useMemo<FlightPair[]>(
     () =>
       activeShipments
         .map((s) => pairFromShipment(s.awb, s.data))
-        .filter((p): p is FlightPair => !!p && analyzeJourney(
-          activeShipments.find((s) => s.awb === p.awb)!.data
-        ).phase === "in_flight"),
+        .filter((p): p is FlightPair => !!p),
     [activeShipments]
   );
 
@@ -288,12 +309,12 @@ export function LiveRadarView({ trackedAWBs, selectedAWB, onSelect, onClose }: L
         return;
       }
       const j = analyzeJourney(data);
-      // Helpful status note so the user understands what they'll see.
+      // Helpful status note so the user understands what they'll see. With FR24
+      // we can draw the real flown route even for delivered shipments, so these
+      // are informational, not errors — only block if there's no flight number.
       if (j.phase === "at_airport" && j.nextFlight) {
         setAddError(`At ${j.at}, waiting for ${j.nextFlight} → ${j.nextTo}`);
-      } else if (j.phase === "delivered") {
-        setAddError(`Already delivered/at destination (${j.at})`);
-      } else if (j.phase !== "in_flight" && !pairFromShipment(awb, data)) {
+      } else if (!pairFromShipment(awb, data)) {
         setAddError("No flight number on this AWB yet");
         return;
       }
@@ -359,10 +380,12 @@ export function LiveRadarView({ trackedAWBs, selectedAWB, onSelect, onClose }: L
           for (let i = 0; i < stops.length - 1; i++) {
             line.push(...greatCircle(stops[i], stops[i + 1]));
           }
+          // Re-unwrap the joined multi-leg line so leg boundaries stay continuous.
+          const continuous = unwrapLng(line);
           return (
             <MapRoute
               key={`route-${awb}`}
-              coordinates={line}
+              coordinates={continuous}
               color="#94a3b8"
               width={2}
               opacity={0.6}
@@ -399,10 +422,19 @@ export function LiveRadarView({ trackedAWBs, selectedAWB, onSelect, onClose }: L
           );
         })}
 
-        {/* Flown path of the focused aircraft (live breadcrumb) */}
-        {focusedTrail && focusedTrail.length >= 2 && (
-          <MapRoute coordinates={focusedTrail} color="#2563eb" width={3} opacity={0.85} />
-        )}
+        {/* Real flown path of the focused aircraft. Prefer OpenSky's actual
+            track (server-provided), fall back to the live-accumulated breadcrumb.
+            Both are unwrapped so antimeridian crossings draw the short way. */}
+        {(() => {
+          const focused = focusKey ? flights.find((x) => flightKey(x) === focusKey) : null;
+          const openskyTrail = focused?.trail ?? [];
+          // Use OpenSky's real track if it has one; else the live breadcrumb.
+          const path = openskyTrail.length >= 2
+            ? openskyTrail
+            : (focusedTrail && focusedTrail.length >= 2 ? focusedTrail : null);
+          if (!path) return null;
+          return <MapRoute coordinates={unwrapLng(path)} color="#2563eb" width={3} opacity={0.85} />;
+        })()}
 
         {flights.map((f) => {
           const selected = flightKey(f) === focusKey || (!!f.awb && f.awb === selectedAWB);

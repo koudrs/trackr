@@ -2,8 +2,10 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { getFlights, type FlightPosition } from "../lib/api";
 import type { TrackedAWB } from "./useTrackedAWBs";
 
-// Latest event status that means the shipment is on a flight right now.
-const IN_AIR_STATUSES = ["DEP"];
+// Statuses worth sending to FR24 for a real flown track. FR24 has the historical
+// trajectory, so we include recently-flown legs (arrived/received/delivered),
+// not just airborne (DEP) — that's how a delivered shipment still shows its route.
+const TRACKABLE_STATUSES = ["DEP", "ARR", "RCF", "NFD", "DLV"];
 
 const DEFAULT_INTERVAL_MS = 15_000; // poll cadence when live is ON
 const MAX_DEAD_RECKON_S = 45; // stop extrapolating if polls stall
@@ -87,12 +89,12 @@ export function pairFromShipment(awb: string, data: TrackedAWB["data"]): FlightP
   };
 }
 
-/** Derive enriched in-air pairs from the shipments we already track (status DEP). */
+/** Derive trackable pairs from tracked shipments (in-transit or recently flown). */
 export function deriveInAirPairs(trackedAWBs: TrackedAWB[]): FlightPair[] {
   const pairs: FlightPair[] = [];
   for (const t of trackedAWBs) {
     if (!t.data?.events?.length) continue;
-    if (!IN_AIR_STATUSES.includes(t.data.events[0].status_code)) continue;
+    if (!TRACKABLE_STATUSES.includes(t.data.events[0].status_code)) continue;
     const p = pairFromShipment(t.awb, t.data);
     if (p) pairs.push(p);
   }

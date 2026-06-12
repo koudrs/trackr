@@ -226,7 +226,9 @@ const Map = forwardRef<MapRef, MapProps>(function Map(
     const map = new MapLibreGL.Map({
       container: containerRef.current,
       style: initialStyle,
-      renderWorldCopies: false,
+      // Repeat the world horizontally so panning across the antimeridian
+      // (Asia<->America cargo routes) wraps seamlessly. Can be overridden via props.
+      renderWorldCopies: true,
       attributionControl: {
         compact: true,
       },
