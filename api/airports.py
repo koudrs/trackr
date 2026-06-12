@@ -29,6 +29,7 @@ AIRPORTS: dict[str, tuple[float, float]] = {
     "LHR": (51.470, -0.454),    # London Heathrow
     "FRA": (50.037, 8.562),     # Frankfurt
     # Americas
+    "ANC": (61.174, -149.996),  # Anchorage (classic transpacific cargo stop)
     "MIA": (25.793, -80.290),   # Miami
     "PTY": (9.071, -79.383),    # Panama Tocumen
     "JFK": (40.640, -73.779),   # New York JFK

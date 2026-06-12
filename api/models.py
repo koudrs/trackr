@@ -75,6 +75,7 @@ class FlightPosition(BaseModel):
     callsign: str  # ADS-B callsign, e.g. "CMP473"
     flight: str | None = None  # IATA flight number we matched it to, e.g. "CM473"
     awb: str | None = None  # Tracked AWB this flight belongs to (XXX-XXXXXXXX)
+    fr24_id: str | None = None  # FR24 flight id, used to fetch the real flown track
     hex: str | None = None  # ICAO24 transponder address
     registration: str | None = None  # Tail number
     aircraft_type: str | None = None  # ICAO type code, e.g. "B763"
@@ -96,6 +97,9 @@ class FlightPosition(BaseModel):
     distance_flown_pct: float | None = None  # 0-100, rough progress along the route
     eta_minutes: float | None = None  # estimated minutes to destination (~approx)
     flight_minutes: float | None = None  # minutes since DEP event (actual time aloft)
+
+    # Real flown track [[lng, lat], ...] when the source provides one (FR24).
+    trail: list[list[float]] = Field(default_factory=list)
 
 
 class FlightPositionList(BaseModel):

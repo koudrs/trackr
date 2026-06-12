@@ -16,9 +16,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+# Load api/.env BEFORE importing modules that read env at import time (fr24).
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).parent / ".env")
+except ImportError:
+    pass
+
 from api.airlines import callsign_candidates
-from api.airports import DEMO_ROUTES, get_airport, haversine_nm
+from api.airports import get_airport, haversine_nm
 from api.carriers import get_carrier, list_carriers
+from api.demo import build_demo
+from api.fr24 import fetch_positions_by_callsigns, fetch_track, fr24_enabled
 from api.models import FlightPosition, FlightPositionList, TrackingError, TrackingResult
 
 # Configure logging
@@ -305,67 +315,30 @@ async def _fetch_airplanes_live(callsigns: list[str]) -> list[dict]:
     return aircraft
 
 
-async def _demo_flights() -> FlightPositionList:
-    """TEMPORARY demo: sample REAL airborne aircraft along this tool's cargo
-    corridors (CGO->PTY, HKG->MIA, ...), so the radar shows planes on the kinds
-    of routes the dashboard cares about. Remove when done.
+async def _fetch_aircraft(callsigns: list[str]) -> list[dict]:
+    """Fetch live aircraft state, preferring FR24 and falling back to airplanes.live.
 
-    For each route we query a circle at the route midpoint and keep aircraft
-    whose great-circle distance to the destination is shrinking (roughly headed
-    that way). Each is enriched with that route's origin/destination + ETA.
+    Both return the same normalized aircraft-dict shape, so the rest of the
+    endpoint is source-agnostic. FR24 gives a `fr24_id` we can use to pull the
+    real flown track later.
     """
-    positions: list[FlightPosition] = []
-    seen_hex: set[str] = set()
+    if fr24_enabled():
+        try:
+            data = await fetch_positions_by_callsigns(callsigns)
+            if data:
+                return data
+            # FR24 reachable but matched nothing — try the community feed too.
+        except Exception as e:
+            logger.warning(f"FR24 positions failed, falling back to airplanes.live: {e}")
+    return await _fetch_airplanes_live(callsigns)
 
-    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-        for origin, dest in DEMO_ROUTES:
-            o, d = get_airport(origin), get_airport(dest)
-            if not o or not d:
-                continue
-            mid_lat, mid_lng = (o[0] + d[0]) / 2, (o[1] + d[1]) / 2
-            url = f"https://api.airplanes.live/v2/point/{mid_lat:.3f}/{mid_lng:.3f}/250"
-            try:
-                resp = await client.get(url, headers={"User-Agent": "KoudrsTracking/0.1 (+https://koudrs.com)"})
-                resp.raise_for_status()
-                aircraft = resp.json().get("ac", [])
-            except Exception as e:
-                logger.warning(f"demo route {origin}->{dest} fetch failed: {e}")
-                continue
 
-            route_dist = haversine_nm(o[0], o[1], d[0], d[1])
-            kept = 0
-            for ac in aircraft:
-                if kept >= 6:  # a few per route is plenty
-                    break
-                callsign = (ac.get("flight") or "").strip()
-                lat, lng = ac.get("lat"), ac.get("lon")
-                hx = ac.get("hex")
-                if not callsign or lat is None or lng is None or hx in seen_hex:
-                    continue
-                # Keep aircraft that are closer to the destination than the full
-                # route length (i.e. plausibly mid-route on this lane).
-                if haversine_nm(float(lat), float(lng), d[0], d[1]) > route_dist:
-                    continue
-                seen_hex.add(hx)
-                kept += 1
-                alt_raw = ac.get("alt_baro")
-                gs = _to_float(ac.get("gs"))
-                route = _enrich_route(float(lat), float(lng), gs, {"origin": origin, "destination": dest, "dep": None})
-                positions.append(
-                    FlightPosition(
-                        callsign=callsign, flight=callsign, awb=f"DEMO:{callsign}",
-                        hex=hx, registration=(ac.get("r") or "").strip() or None,
-                        aircraft_type=(ac.get("t") or "").strip() or None,
-                        aircraft_desc=(ac.get("desc") or "").strip() or None,
-                        lat=float(lat), lng=float(lng),
-                        track=_to_float(ac.get("track")), ground_speed=gs,
-                        altitude=_to_float(alt_raw), vertical_rate=_to_float(ac.get("baro_rate")),
-                        on_ground=(alt_raw == "ground"), seen_pos=_to_float(ac.get("seen_pos")),
-                        **route,
-                    )
-                )
-
-    return FlightPositionList(flights=positions, requested=len(positions), matched=len(positions))
+async def _demo_flights() -> FlightPositionList:
+    """Synthetic demo: guaranteed cargo flights China/Asia -> Panama/Americas
+    WITH stops, each placed along its route with coherent telemetry + flown
+    track. See api/demo.py. Independent of live traffic, so it always looks good.
+    """
+    return build_demo(int(time.time()))
 
 
 def _enrich_route(lat: float, lng: float, gs: float | None, meta: dict) -> dict:
@@ -475,9 +448,9 @@ async def get_flights(
         return FlightPositionList(requested=len(pairs), matched=0)
 
     try:
-        aircraft = await _fetch_airplanes_live(callsigns)
+        aircraft = await _fetch_aircraft(callsigns)
     except Exception as e:  # network/upstream error -> empty, never break the map
-        logger.warning(f"airplanes.live fetch failed: {type(e).__name__}: {e}")
+        logger.warning(f"flight fetch failed: {type(e).__name__}: {e}")
         return FlightPositionList(requested=len(pairs), matched=0)
 
     positions: list[FlightPosition] = []
@@ -493,6 +466,7 @@ async def get_flights(
         alt_raw = ac.get("alt_baro")
         common = dict(
             callsign=callsign,
+            fr24_id=ac.get("fr24_id"),
             hex=ac.get("hex"),
             registration=(ac.get("r") or "").strip() or None,
             aircraft_type=(ac.get("t") or "").strip() or None,
@@ -526,6 +500,15 @@ async def get_flights(
         requested=len(pairs),
         matched=len(positions),
     )
+
+
+@app.get("/api/flight-track/{fr24_id}")
+async def flight_track(fr24_id: str) -> dict:
+    """Real flown track of a flight as [[lng, lat], ...] (FR24). The frontend
+    calls this only for the selected aircraft, to draw its true path."""
+    if not fr24_enabled():
+        return {"track": []}
+    return {"track": await fetch_track(fr24_id)}
 
 
 @app.get("/api/airports")
