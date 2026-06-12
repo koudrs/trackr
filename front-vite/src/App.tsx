@@ -165,24 +165,27 @@ function App() {
         onClick={() => setSidebarOpen(false)}
       />
 
-      {/* Sidebar */}
-      <TrackingSidebar
-        trackedAWBs={trackedAWBs}
-        selectedAWB={selectedAWB}
-        onSelect={handleSelectFromSidebar}
-        onRemove={removeAWB}
-        onRefresh={handleRefreshFromSidebar}
-        onClearAll={clearAll}
-        onRefreshAll={refreshAll}
-        onTrack={handleTrack}
-        onAddConnection={addConnection}
-        onUnlinkConnection={unlinkConnection}
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-      />
+      {/* Sidebar (hidden in radar mode so the full-screen map owns the screen) */}
+      {view !== "radar" && (
+        <TrackingSidebar
+          trackedAWBs={trackedAWBs}
+          selectedAWB={selectedAWB}
+          onSelect={handleSelectFromSidebar}
+          onRemove={removeAWB}
+          onRefresh={handleRefreshFromSidebar}
+          onClearAll={clearAll}
+          onRefreshAll={refreshAll}
+          onTrack={handleTrack}
+          onAddConnection={addConnection}
+          onUnlinkConnection={unlinkConnection}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+        />
+      )}
 
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden">
+      {/* Main Content — hidden while the full-screen radar is open so it can't
+          bleed through behind the map. */}
+      <main className={`flex-1 flex flex-col h-screen overflow-hidden ${view === "radar" ? "hidden" : ""}`}>
         {/* Header */}
         <header className="shrink-0 bg-[var(--card)] border-b border-[var(--border)] px-4 lg:px-6 py-4">
           <div className="max-w-5xl mx-auto">
@@ -365,6 +368,8 @@ function App() {
           selectedAWB={selectedAWB}
           onSelect={handleSelectFromSidebar}
           onClose={() => setView("tracking")}
+          darkMode={darkMode}
+          onToggleTheme={() => setDarkMode(!darkMode)}
         />
       )}
     </div>

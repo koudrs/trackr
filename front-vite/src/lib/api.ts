@@ -66,8 +66,17 @@ export interface FlightPosition {
   distance_flown_pct: number | null;
   eta_minutes: number | null;
   flight_minutes: number | null;
-  // Real flown trail from OpenSky, as [[lng, lat], ...]. Empty when unavailable.
+  // Real flown trail, as [[lng, lat], ...]. Empty when unavailable.
   trail: [number, number][];
+  fr24_id: string | null; // FR24 flight id, to fetch the real flown track
+}
+
+/** Fetch the real flown track of a flight (FR24), as [[lng, lat], ...]. */
+export async function getFlightTrack(fr24Id: string): Promise<[number, number][]> {
+  const res = await fetch(`${API_BASE}/flight-track/${encodeURIComponent(fr24Id)}`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.track ?? [];
 }
 
 export interface FlightPositionList {

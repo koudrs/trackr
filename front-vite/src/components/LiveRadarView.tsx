@@ -1,12 +1,17 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo, type ReactNode } from "react";
 import { LngLatBounds } from "maplibre-gl";
-import { Map, MapMarker, MarkerContent, MarkerTooltip, MapControls, MapRoute, useMap } from "./ui/map";
+import { Map, MapMarker, MarkerContent, MarkerTooltip, MapRoute, useMap } from "./ui/map";
 import type { MapRef } from "./ui/map";
-import { Radio, Plane, RefreshCw, Crosshair, Gauge, ArrowUp, X, Search, Sparkles, Trash2, Clock, Navigation } from "lucide-react";
+import { Radio, Plane, RefreshCw, Crosshair, Gauge, ArrowUp, X, Search, Sparkles, Trash2, Clock, Navigation, Globe2, Plus, Minus, Compass, Map as Map2, Clapperboard, Sun, Moon, PanelLeftOpen, PanelLeftClose, Maximize, Minimize } from "lucide-react";
+import { RadarInfoBar } from "./RadarInfoBar";
 import type { TrackedAWB } from "../hooks/useTrackedAWBs";
 import { useLiveFlights, pairFromShipment, flightKey, type LiveFlight, type FlightPair } from "../hooks/useLiveFlights";
-import { trackAWB, getAirports, type TrackingResult } from "../lib/api";
+import { trackAWB, getAirports, getFlightTrack, type TrackingResult } from "../lib/api";
 import { analyzeJourney, type JourneyState } from "../lib/journey";
+
+// Panama (Tocumen) is the hub: the platform's center of gravity. The map opens
+// on Panama and "fit" always keeps it anchored so cargo is seen converging here.
+const PANAMA: [number, number] = [-79.383, 9.071]; // [lng, lat]
 
 /**
  * Build a bounding box that handles flights straddling the antimeridian
@@ -14,10 +19,12 @@ import { analyzeJourney, type JourneyState } from "../lib/journey";
  * span ~the whole globe; instead we unwrap each longitude relative to a running
  * reference so adjacent points never differ by more than 180deg.
  */
-function boundsForFlights(flights: LiveFlight[]): LngLatBounds | null {
+function boundsForFlights(flights: LiveFlight[], anchorPanama = true): LngLatBounds | null {
   if (flights.length === 0) return null;
   const bounds = new LngLatBounds();
-  let refLng = flights[0].displayLng;
+  // Anchor on Panama so the hub is always in frame and cargo reads as converging.
+  let refLng = anchorPanama ? PANAMA[0] : flights[0].displayLng;
+  if (anchorPanama) bounds.extend(PANAMA);
   for (const f of flights) {
     let lng = f.displayLng;
     while (lng - refLng > 180) lng -= 360;
@@ -33,6 +40,8 @@ interface LiveRadarViewProps {
   selectedAWB: string | null;
   onSelect: (awb: string) => void;
   onClose: () => void; // back to Shipments (full-screen radar)
+  darkMode: boolean;
+  onToggleTheme: () => void;
 }
 
 /**
@@ -98,54 +107,88 @@ function vrLabel(vr: number | null | undefined): string {
   return "cruise";
 }
 
-/** Detail panel for the focused aircraft: combines cargo + live flight data. */
-function FlightDetail({ f }: { f: LiveFlight }) {
+/** A single big stat tile for the HUD. */
+function Stat({ icon, label, value, sub }: {
+  icon: ReactNode; label: string; value: string; sub?: string;
+}) {
   return (
-    <div className="px-4 py-3 bg-[var(--muted)]/50 border-b border-[var(--border)]">
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold text-[var(--foreground)]">{f.flight || f.callsign}</span>
+    <div className="rounded-lg bg-[var(--muted)]/40 px-2.5 py-2">
+      <div className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-[var(--muted-foreground)]">
+        {icon}{label}
+      </div>
+      <div className="mt-0.5 flex items-baseline gap-1">
+        <span key={value} className="radar-tick text-base font-bold tabular-nums text-[var(--foreground)] leading-none">
+          {value}
+        </span>
+        {sub && <span className="text-[9px] text-[var(--muted-foreground)]">{sub}</span>}
+      </div>
+    </div>
+  );
+}
+
+/** Cinematic detail panel for the focused aircraft: cargo + live flight data. */
+function FlightDetail({ f }: { f: LiveFlight }) {
+  const pct = f.distance_flown_pct ?? 0;
+  return (
+    <div className="radar-panel-in px-4 py-3 border-b border-[var(--border)] bg-gradient-to-b from-[var(--muted)]/30 to-transparent">
+      {/* flight + route headline */}
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <div className="text-xl font-extrabold tracking-tight text-[var(--foreground)] leading-none">
+            {f.flight || f.callsign}
+          </div>
+          {f.aircraft_desc && (
+            <div className="mt-1 text-[10px] text-[var(--muted-foreground)]">
+              {f.aircraft_desc}{f.registration ? ` · ${f.registration}` : ""}
+            </div>
+          )}
+        </div>
         {f.origin && f.destination && (
-          <span className="text-xs font-medium text-[var(--foreground)]">{f.origin} → {f.destination}</span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-lg font-bold text-[var(--foreground)]">{f.origin}</span>
+            <Plane className="w-3.5 h-3.5 text-sky-400 -rotate-45" />
+            <span className="text-lg font-bold text-[var(--foreground)]">{f.destination}</span>
+          </div>
         )}
       </div>
-      {f.aircraft_desc && (
-        <div className="mt-0.5 text-[10px] text-[var(--muted-foreground)]">
-          {f.aircraft_desc}{f.registration ? ` · ${f.registration}` : ""}
-        </div>
-      )}
 
-      {/* progress bar */}
+      {/* route progress */}
       {f.distance_flown_pct != null && (
-        <div className="mt-2">
-          <div className="h-1.5 rounded-full bg-[var(--border)] overflow-hidden">
-            <div className="h-full bg-blue-500" style={{ width: `${f.distance_flown_pct}%` }} />
+        <div className="mt-3">
+          <div className="relative h-2 rounded-full bg-[var(--border)] overflow-hidden">
+            <div
+              className="radar-progress-fill h-full rounded-full"
+              style={{ width: `${pct}%`, ["--radar-accent" as string]: "#38bdf8" }}
+            />
+            {/* plane glyph riding the progress bar */}
+            <div
+              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 transition-all duration-700"
+              style={{ left: `${Math.max(3, Math.min(97, pct))}%` }}
+            >
+              <Plane className="w-3 h-3 text-sky-100 rotate-90 drop-shadow" />
+            </div>
           </div>
-          <div className="mt-1 flex justify-between text-[9px] text-[var(--muted-foreground)]">
-            <span>{Math.round(f.distance_flown_pct)}% flown</span>
-            {f.distance_remaining_nm != null && <span>{Math.round(f.distance_remaining_nm).toLocaleString()} nm left</span>}
+          <div className="mt-1.5 flex justify-between text-[10px] font-medium text-[var(--muted-foreground)]">
+            <span className="text-sky-400">{Math.round(pct)}% flown</span>
+            {f.distance_remaining_nm != null && (
+              <span>{Math.round(f.distance_remaining_nm).toLocaleString()} nm to go</span>
+            )}
           </div>
         </div>
       )}
 
-      {/* live stats grid */}
-      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[10px]">
-        <div className="flex items-center gap-1 text-[var(--muted-foreground)]">
-          <ArrowUp className="w-3 h-3" />
-          {f.altitude != null ? `${Math.round(f.altitude).toLocaleString()} ft` : "—"}
-          {vrLabel(f.vertical_rate) && <span className="opacity-70">· {vrLabel(f.vertical_rate)}</span>}
-        </div>
-        <div className="flex items-center gap-1 text-[var(--muted-foreground)]">
-          <Gauge className="w-3 h-3" />
-          {f.ground_speed != null ? `${Math.round(f.ground_speed)} kt` : "—"}
-        </div>
-        <div className="flex items-center gap-1 text-[var(--muted-foreground)]">
-          <Clock className="w-3 h-3" />
-          {f.flight_minutes != null ? `${fmtMin(f.flight_minutes)} aloft` : "—"}
-        </div>
-        <div className="flex items-center gap-1 text-[var(--muted-foreground)]">
-          <Navigation className="w-3 h-3" />
-          {f.eta_minutes != null ? `ETA ~${fmtMin(f.eta_minutes)}` : "—"}
-        </div>
+      {/* big live stat tiles */}
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <Stat icon={<ArrowUp className="w-3 h-3" />} label="Altitude"
+          value={f.altitude != null ? Math.round(f.altitude).toLocaleString() : "—"}
+          sub={f.altitude != null ? `ft · ${vrLabel(f.vertical_rate)}` : undefined} />
+        <Stat icon={<Gauge className="w-3 h-3" />} label="Speed"
+          value={f.ground_speed != null ? Math.round(f.ground_speed).toString() : "—"}
+          sub={f.ground_speed != null ? "kt" : undefined} />
+        <Stat icon={<Clock className="w-3 h-3" />} label="Aloft"
+          value={f.flight_minutes != null ? fmtMin(f.flight_minutes) : "—"} />
+        <Stat icon={<Navigation className="w-3 h-3" />} label="ETA"
+          value={f.eta_minutes != null ? `~${fmtMin(f.eta_minutes)}` : "—"} />
       </div>
     </div>
   );
@@ -160,19 +203,40 @@ const POLL_OPTIONS = [
 
 // Plane SVG points "up" (north) at 0deg; MapMarker rotation handles the heading.
 function PlaneIcon({ selected, grounded }: { selected: boolean; grounded: boolean }) {
-  const fill = grounded ? "#94a3b8" : selected ? "#f59e0b" : "#2563eb";
+  const fill = grounded ? "#94a3b8" : selected ? "#fbbf24" : "#38bdf8";
   return (
-    <svg
-      width="30"
-      height="30"
-      viewBox="0 0 39.769 39.769"
-      className={`drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] ${grounded ? "opacity-70" : ""}`}
-      fill={fill}
-      stroke="#ffffff"
-      strokeWidth="1.5"
+    <div
+      className={`radar-plane ${selected ? "radar-plane--selected" : ""} ${
+        grounded ? "radar-plane--grounded" : ""
+      }`}
     >
-      <path d="M36.384 23.28v1.896c0 .46-.211.896-.571 1.181a1.5 1.5 0 0 1-1.282.278l-11.886-2.858v11.457l3.271 2.309a1 1 0 0 1 .424.816v.41c0 .291-.127.565-.346.758a1 1 0 0 1-.798.231l-5.314-.766-5.317.765a1 1 0 0 1-1.142-.989v-.409c0-.326.157-.632.423-.817l3.271-2.31V23.774L5.233 26.632a1.51 1.51 0 0 1-1.279-.277 1.51 1.51 0 0 1-.57-1.181v-1.896c0-.545.296-1.047.771-1.312l12.963-7.207V2.767A2.77 2.77 0 0 1 19.885 0a2.77 2.77 0 0 1 2.767 2.767V14.76l12.964 7.207c.471.266.768.768.768 1.313" />
-    </svg>
+      {selected && !grounded && <span className="radar-halo" />}
+      <svg
+        width={selected ? 36 : 30}
+        height={selected ? 36 : 30}
+        viewBox="0 0 39.769 39.769"
+        fill={fill}
+        stroke="#ffffff"
+        strokeWidth="1.5"
+      >
+        <path d="M36.384 23.28v1.896c0 .46-.211.896-.571 1.181a1.5 1.5 0 0 1-1.282.278l-11.886-2.858v11.457l3.271 2.309a1 1 0 0 1 .424.816v.41c0 .291-.127.565-.346.758a1 1 0 0 1-.798.231l-5.314-.766-5.317.765a1 1 0 0 1-1.142-.989v-.409c0-.326.157-.632.423-.817l3.271-2.31V23.774L5.233 26.632a1.51 1.51 0 0 1-1.279-.277 1.51 1.51 0 0 1-.57-1.181v-1.896c0-.545.296-1.047.771-1.312l12.963-7.207V2.767A2.77 2.77 0 0 1 19.885 0a2.77 2.77 0 0 1 2.767 2.767V14.76l12.964 7.207c.471.266.768.768.768 1.313" />
+      </svg>
+    </div>
+  );
+}
+
+/** The Panama hub marker — the platform's center of attention. */
+function HubPin() {
+  return (
+    <div className="relative flex flex-col items-center" title="Panama Hub (PTY)">
+      <span className="radar-halo" style={{ borderColor: "rgba(56,189,248,0.6)" }} />
+      <div className="relative w-8 h-8 rounded-full bg-gradient-to-br from-sky-400 to-blue-700 border-2 border-white flex items-center justify-center shadow-lg shadow-sky-500/40">
+        <Navigation className="w-4 h-4 text-white" />
+      </div>
+      <span className="mt-1 px-1.5 py-0.5 rounded bg-sky-500 text-white text-[10px] font-extrabold tracking-wide shadow">
+        PTY
+      </span>
+    </div>
   );
 }
 
@@ -188,26 +252,99 @@ function AirportPin({ code }: { code: string }) {
   );
 }
 
-/** Auto-fit the map to all flights once they first load. */
-function FitToFlights({ flights }: { flights: LiveFlight[] }) {
+/** Keeps the globe projection + atmospheric fog applied, re-applying after every
+    style (re)load since setStyle clears fog. Driven from inside the Map context. */
+function GlobeAtmosphere({ globe }: { globe: boolean }) {
   const { map, isLoaded } = useMap();
-  const didFit = useRef(false);
-
   useEffect(() => {
-    if (!map || !isLoaded || flights.length === 0 || didFit.current) return;
-    const bounds = boundsForFlights(flights);
-    if (bounds) map.fitBounds(bounds, { padding: 100, maxZoom: 6, duration: 1000 });
-    didFit.current = true;
-  }, [map, isLoaded, flights]);
-
+    if (!map) return;
+    const apply = () => {
+      try {
+        map.setProjection({ type: globe ? "globe" : "mercator" });
+        map.setRenderWorldCopies(!globe);
+        if (globe) {
+          // Atmospheric halo + deep-space gradient behind the globe (MapLibre sky).
+          map.setSky({
+            "sky-color": "#0a1228",
+            "sky-horizon-blend": 0.5,
+            "horizon-color": "#245c9e",
+            "horizon-fog-blend": 0.6,
+            "fog-color": "#0d1426",
+            "fog-ground-blend": 0.1,
+            "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 0, 1, 5, 0.7, 7, 0],
+          } as Record<string, unknown>);
+        } else {
+          map.setSky(undefined as unknown as Record<string, unknown>);
+        }
+      } catch { /* not ready */ }
+    };
+    apply();
+    map.on("styledata", apply);
+    return () => { map.off("styledata", apply); };
+  }, [map, isLoaded, globe]);
   return null;
 }
 
-export function LiveRadarView({ trackedAWBs, selectedAWB, onSelect, onClose }: LiveRadarViewProps) {
+/** A labeled toolbar button (icon + text) — clear for non-expert users. */
+function ToolButton({ icon, label, active, onClick, title }: {
+  icon: ReactNode; label?: string; active?: boolean; onClick: () => void; title: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className={`flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-semibold transition-colors ${
+        active
+          ? "bg-sky-500 text-white shadow shadow-sky-500/30"
+          : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)]"
+      }`}
+    >
+      {icon}{label && <span className="hidden sm:inline">{label}</span>}
+    </button>
+  );
+}
+
+/** Keep Panama centered on first load. We deliberately do NOT fit-to-all-flights
+    automatically: with worldwide cargo the bounding box spans half the planet and
+    its center lands in the middle of an ocean. Panama is the hub, so it stays the
+    anchor; the user can press "Fit" to frame everything on demand. */
+function FitToFlights({ flights }: { flights: LiveFlight[] }) {
+  const { map, isLoaded } = useMap();
+  const didCenter = useRef(false);
+
+  useEffect(() => {
+    if (!map || !isLoaded || didCenter.current) return;
+    map.easeTo({ center: PANAMA, duration: 800 });
+    didCenter.current = true;
+  }, [map, isLoaded]);
+
+  // flights param kept for API compatibility / future use.
+  void flights;
+  return null;
+}
+
+export function LiveRadarView({ trackedAWBs, selectedAWB, onSelect, onClose, darkMode, onToggleTheme }: LiveRadarViewProps) {
   const mapRef = useRef<MapRef | null>(null);
+
+  // Sidebar collapse (so the map can own the whole screen on a TV).
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // Demo mode: show real airborne traffic so the radar can be seen working.
   const [demo, setDemo] = useState(false);
+
+  // 3D globe vs flat mercator. Globe = the cinematic, TV-grade view.
+  const [globe, setGlobe] = useState<boolean>(() => {
+    const saved = localStorage.getItem("radarGlobe");
+    return saved ? saved === "true" : true; // default to globe
+  });
+  useEffect(() => { localStorage.setItem("radarGlobe", String(globe)); }, [globe]);
+
+  // Cinema mode: auto-tour the active flights for an unattended TV display.
+  const [cinema, setCinema] = useState(false);
+  const cinemaIdxRef = useRef(0);
+
+  // Projection + atmosphere are applied by <GlobeAtmosphere> inside the Map,
+  // which also survives style reloads. (See the component above.)
 
   // The radar's own active list: AWBs added straight from here (independent of
   // the Shipments tracker). We keep the full TrackingResult so we can analyze
@@ -332,32 +469,128 @@ export function LiveRadarView({ trackedAWBs, selectedAWB, onSelect, onClose }: L
   const removeActive = (awb: string) =>
     setActiveShipments((prev) => prev.filter((s) => s.awb !== awb));
 
+  // Real flown track (FR24) of the focused aircraft, keyed by fr24_id.
+  const [realTracks, setRealTracks] = useState<Record<string, [number, number][]>>({});
+
   const flyTo = (f: LiveFlight) => {
     setFocusKey(flightKey(f));
     if (f.awb && !f.awb.startsWith("DEMO:")) onSelect(f.awb);
     mapRef.current?.flyTo({ center: [f.displayLng, f.displayLat], zoom: 6, duration: 1000 });
+    // Pull the real flown path from FR24 for this aircraft (once).
+    if (f.fr24_id && !realTracks[f.fr24_id]) {
+      getFlightTrack(f.fr24_id).then((track) => {
+        if (track.length >= 2) {
+          setRealTracks((prev) => ({ ...prev, [f.fr24_id!]: track }));
+        }
+      });
+    }
   };
 
   const fitAll = () => {
     const bounds = boundsForFlights(flights);
     if (mapRef.current && bounds) {
-      mapRef.current.fitBounds(bounds, { padding: 100, maxZoom: 6, duration: 800 });
+      // Cap how far it can zoom out so the Panama hub stays readable even when
+      // cargo is spread worldwide.
+      mapRef.current.fitBounds(bounds, { padding: 100, minZoom: 1.8, maxZoom: 6, duration: 800 });
     }
   };
+
+  // Cinema mode:
+  //  - If a flight is SELECTED: cinematic follow — keep that aircraft framed as
+  //    it moves (works for demo or real flights), with a tilted globe view.
+  //  - If nothing is selected: gentle auto-tour across all flights as a fallback.
+  useEffect(() => {
+    if (!cinema) return;
+    const m = mapRef.current;
+    if (!m) return;
+
+    // FOLLOW a specific selected flight.
+    if (focusKey) {
+      const follow = () => {
+        const mm = mapRef.current;
+        const f = flights.find((x) => flightKey(x) === focusKey);
+        if (!mm || !f) return;
+        mm.easeTo({
+          center: [f.displayLng, f.displayLat],
+          zoom: Math.max(mm.getZoom(), 4.2),
+          pitch: globe ? 50 : 0,
+          duration: 1800,
+          essential: true,
+        });
+      };
+      follow();
+      const id = window.setInterval(follow, 2000); // track its movement
+      return () => clearInterval(id);
+    }
+
+    // No selection -> auto-tour all flights, with a Panama beauty shot each lap.
+    const step = () => {
+      const mm = mapRef.current;
+      if (!mm || flights.length === 0) return;
+      const i = cinemaIdxRef.current % (flights.length + 1);
+      cinemaIdxRef.current = i + 1;
+      if (i === flights.length) {
+        const b = boundsForFlights(flights);
+        if (b) mm.fitBounds(b, { padding: 120, minZoom: 1.8, maxZoom: 5, duration: 2500, pitch: globe ? 35 : 0 });
+      } else {
+        const f = flights[i];
+        mm.flyTo({ center: [f.displayLng, f.displayLat], zoom: 4.5,
+          pitch: globe ? 45 : 0, duration: 2500, essential: true });
+      }
+    };
+    step();
+    const id = window.setInterval(step, 7000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cinema, focusKey, flights.length, globe]);
+
+  const zoomBy = (delta: number) => {
+    const m = mapRef.current;
+    if (m) m.easeTo({ zoom: m.getZoom() + delta, duration: 300 });
+  };
+  const resetNorth = () => mapRef.current?.easeTo({ bearing: 0, pitch: 0, duration: 500 });
+
+  // Browser fullscreen — one click to throw it on a TV.
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen().catch(() => {});
+  };
+  useEffect(() => {
+    const onFs = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onFs);
+    return () => document.removeEventListener("fullscreenchange", onFs);
+  }, []);
 
   // Breadcrumb trail of the focused aircraft (path it has flown since opened).
   const focusedTrail = focusKey ? trails[focusKey] : undefined;
 
   return (
     <div className="fixed inset-0 z-[1000]">
-      {/* Full-bleed map */}
+      {/* Full-bleed map. Globe projection = spherical 3D earth (no repeated
+          world, planes feel like they float over a real globe). */}
       <Map
         ref={mapRef}
         className="absolute inset-0"
-        viewport={{ center: [0, 20], zoom: 1.5 }}
+        theme={darkMode ? "dark" : "light"}
+        viewport={{ center: PANAMA, zoom: globe ? 2.6 : 2.4 }}
+        projection={globe ? { type: "globe" } : { type: "mercator" }}
+        minZoom={1.6}
+        maxZoom={9}
+        attributionControl={false}
       >
-        <MapControls position="bottom-right" />
+        <GlobeAtmosphere globe={globe} />
         <FitToFlights flights={flights} />
+
+        {/* Panama hub — always shown as the platform's center of attention */}
+        <MapMarker longitude={PANAMA[0]} latitude={PANAMA[1]}>
+          <MarkerContent>
+            <HubPin />
+          </MarkerContent>
+          <MarkerTooltip>
+            <div className="text-xs font-semibold">PTY · Panama Hub</div>
+          </MarkerTooltip>
+        </MapMarker>
 
         {/* Planned route lines (dashed) for each known shipment: connect its legs
             through their airports. The free feed has no historical track, so this
@@ -422,18 +655,47 @@ export function LiveRadarView({ trackedAWBs, selectedAWB, onSelect, onClose }: L
           );
         })}
 
-        {/* Real flown path of the focused aircraft. Prefer OpenSky's actual
-            track (server-provided), fall back to the live-accumulated breadcrumb.
+        {/* Demo: draw every flight's already-flown track so the map shows the
+            full China->Panama lanes with stops, not just the selected one. */}
+        {demo && flights.map((f) => {
+          if (!f.trail || f.trail.length < 2) return null;
+          const isFocused = flightKey(f) === focusKey;
+          if (isFocused) return null; // focused one drawn brighter below
+          return (
+            <MapRoute
+              key={`demotrail-${flightKey(f)}`}
+              coordinates={unwrapLng(f.trail)}
+              color="#38bdf8"
+              width={2}
+              opacity={0.4}
+              interactive={false}
+            />
+          );
+        })}
+
+        {/* Real flown path of the focused aircraft. Prefer the real FR24/demo
+            track, fall back to the live-accumulated breadcrumb.
             Both are unwrapped so antimeridian crossings draw the short way. */}
         {(() => {
           const focused = focusKey ? flights.find((x) => flightKey(x) === focusKey) : null;
-          const openskyTrail = focused?.trail ?? [];
-          // Use OpenSky's real track if it has one; else the live breadcrumb.
-          const path = openskyTrail.length >= 2
-            ? openskyTrail
+          // Priority: real FR24 track (fetched on select) > per-position trail >
+          // live-accumulated breadcrumb.
+          const fr24Track = focused?.fr24_id ? realTracks[focused.fr24_id] : undefined;
+          const positionTrail = focused?.trail ?? [];
+          const path =
+            fr24Track && fr24Track.length >= 2 ? fr24Track
+            : positionTrail.length >= 2 ? positionTrail
             : (focusedTrail && focusedTrail.length >= 2 ? focusedTrail : null);
           if (!path) return null;
-          return <MapRoute coordinates={unwrapLng(path)} color="#2563eb" width={3} opacity={0.85} />;
+          const coords = unwrapLng(path);
+          // Neon contrail: a wide soft glow underneath + a bright core on top.
+          return (
+            <>
+              <MapRoute coordinates={coords} color="#38bdf8" width={11} opacity={0.18} interactive={false} />
+              <MapRoute coordinates={coords} color="#38bdf8" width={5} opacity={0.35} interactive={false} />
+              <MapRoute coordinates={coords} color="#e0f2fe" width={2} opacity={0.95} interactive={false} />
+            </>
+          );
         })()}
 
         {flights.map((f) => {
@@ -464,19 +726,91 @@ export function LiveRadarView({ trackedAWBs, selectedAWB, onSelect, onClose }: L
         })}
       </Map>
 
-      {/* Floating sidebar */}
-      <div className="absolute left-4 top-4 bottom-4 z-[400] w-72 max-w-[calc(100%-2rem)] flex flex-col rounded-xl border border-[var(--border)] bg-[var(--card)]/95 backdrop-blur shadow-xl overflow-hidden">
+      {/* Cinematic vignette for depth on a big screen (non-interactive) */}
+      <div className="pointer-events-none absolute inset-0 z-[420]"
+        style={{ boxShadow: "inset 0 0 200px 40px rgba(0,0,0,0.55)" }} />
+
+      {/* Bottom toolbar — clear, labeled controls for non-expert users */}
+      <div className="radar-hud absolute bottom-5 left-1/2 -translate-x-1/2 z-[450] flex items-center gap-1 rounded-2xl px-2 py-1.5">
+        <ToolButton icon={<Minus className="w-4 h-4" />} onClick={() => zoomBy(-1)} title="Zoom out" />
+        <ToolButton icon={<Plus className="w-4 h-4" />} onClick={() => zoomBy(1)} title="Zoom in" />
+        <ToolButton icon={<Crosshair className="w-4 h-4" />} label="Fit" onClick={fitAll} title="Fit all flights in view" />
+        <ToolButton icon={<Compass className="w-4 h-4" />} onClick={resetNorth} title="Reset north / level view" />
+
+        <div className="w-px h-6 bg-[var(--border)] mx-1" />
+
+        <ToolButton
+          icon={globe ? <Globe2 className="w-4 h-4" /> : <Map2 className="w-4 h-4" />}
+          label={globe ? "Globe" : "Flat"}
+          active={globe}
+          onClick={() => setGlobe((g) => !g)}
+          title="Switch between 3D globe and flat map"
+        />
+        <ToolButton
+          icon={<Sparkles className="w-4 h-4" />}
+          label="Demo"
+          active={demo}
+          onClick={() => setDemo((d) => !d)}
+          title="Demo: cargo flights China → Panama with stops"
+        />
+        <ToolButton
+          icon={<Clapperboard className="w-4 h-4" />}
+          label="Cinema"
+          active={cinema}
+          onClick={() => setCinema((c) => !c)}
+          title={focusKey
+            ? "Cinema: follow the selected flight"
+            : "Cinema: select a flight to follow it, or auto-tour all"}
+        />
+
+        <div className="w-px h-6 bg-[var(--border)] mx-1" />
+
+        <ToolButton
+          icon={<span className={`radar-live-dot w-2 h-2 rounded-full ${live ? "bg-green-400" : "bg-[var(--muted-foreground)]"}`} />}
+          label={live ? "Live" : "Paused"}
+          active={live}
+          onClick={() => setLive(!live)}
+          title={live ? "Live updates on — click to pause" : "Paused — click to go live"}
+        />
+
+        <div className="w-px h-6 bg-[var(--border)] mx-1" />
+
+        <ToolButton
+          icon={darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          onClick={onToggleTheme}
+          title={darkMode ? "Light mode" : "Dark mode"}
+        />
+        <ToolButton
+          icon={isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+          label={isFullscreen ? "Exit" : "Full"}
+          onClick={toggleFullscreen}
+          title={isFullscreen ? "Exit fullscreen" : "Fullscreen (best for TV)"}
+        />
+      </div>
+
+      {/* World clocks + Panama weather (top-right) */}
+      <RadarInfoBar />
+
+      {/* Floating sidebar (collapsible) */}
+      {!sidebarCollapsed && (
+      <div className="radar-panel-in radar-hud absolute left-4 top-4 bottom-4 z-[400] w-80 max-w-[calc(100%-2rem)] flex flex-col rounded-2xl overflow-hidden">
         {/* Header */}
         <div className="shrink-0 px-4 py-3 border-b border-[var(--border)]">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center">
-                <Radio className="w-4 h-4 text-white" />
+            <div className="flex items-center gap-2.5">
+              <div className="relative w-9 h-9 rounded-xl bg-gradient-to-br from-sky-500 to-blue-700 flex items-center justify-center overflow-hidden shadow-lg shadow-sky-500/30">
+                {/* sweeping radar beam */}
+                <div className="radar-sweep absolute inset-0">
+                  <div className="absolute left-1/2 top-1/2 h-1/2 w-1/2 origin-top-left"
+                    style={{ background: "conic-gradient(from 0deg, rgba(255,255,255,0.5), transparent 70%)" }} />
+                </div>
+                <Radio className="relative w-4 h-4 text-white" />
               </div>
               <div>
-                <h2 className="text-sm font-semibold text-[var(--foreground)]">Live Radar</h2>
-                <p className="text-[10px] text-[var(--muted-foreground)]">
-                  {matched}/{demo ? matched : pairs.length} flights{demo ? " (demo)" : " tracked"}
+                <h2 className="text-sm font-bold tracking-tight text-[var(--foreground)] leading-tight">Live Cargo Radar</h2>
+                <p className="text-[10px] text-[var(--muted-foreground)] leading-tight">
+                  <span className="text-sky-400 font-semibold">{matched}</span> live
+                  {!demo && <> · {pairs.length} tracked</>}{demo && " · demo"}
                 </p>
               </div>
             </div>
@@ -488,6 +822,13 @@ export function LiveRadarView({ trackedAWBs, selectedAWB, onSelect, onClose }: L
                 className="p-1.5 rounded-lg hover:bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
               >
                 <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
+              </button>
+              <button
+                onClick={() => setSidebarCollapsed(true)}
+                title="Hide panel"
+                className="p-1.5 rounded-lg hover:bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+              >
+                <PanelLeftClose className="w-4 h-4" />
               </button>
               <button
                 onClick={onClose}
@@ -515,7 +856,7 @@ export function LiveRadarView({ trackedAWBs, selectedAWB, onSelect, onClose }: L
               <button
                 onClick={handleAdd}
                 disabled={adding}
-                className="px-2.5 py-1.5 text-[11px] font-medium rounded-md bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-50"
+                className="px-3 py-1.5 text-[11px] font-semibold rounded-md bg-sky-500 text-white hover:bg-sky-400 disabled:opacity-50 transition-colors"
               >
                 {adding ? "…" : "Add"}
               </button>
@@ -523,46 +864,22 @@ export function LiveRadarView({ trackedAWBs, selectedAWB, onSelect, onClose }: L
             {addError && <p className="mt-1 text-[10px] text-red-500">{addError}</p>}
           </div>
 
-          {/* Live toggle + interval + demo */}
-          <div className="mt-3 flex items-center justify-between gap-2">
-            <button
-              onClick={() => setLive(!live)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium transition-colors ${
-                live
-                  ? "bg-green-500/10 border-green-500/40 text-green-600 dark:text-green-400"
-                  : "bg-[var(--muted)] border-[var(--border)] text-[var(--muted-foreground)]"
-              }`}
-            >
-              <span className={`w-1.5 h-1.5 rounded-full ${live ? "bg-green-500 animate-pulse" : "bg-[var(--muted-foreground)]"}`} />
-              {live ? "LIVE" : "PAUSED"}
-            </button>
-            <select
-              value={intervalMs}
-              onChange={(e) => setIntervalMs(Number(e.target.value))}
-              disabled={!live}
-              className="text-[11px] px-2 py-1 rounded-md bg-[var(--muted)] border border-[var(--border)] text-[var(--foreground)] disabled:opacity-50"
-              title="Polling interval"
-            >
-              {POLL_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  every {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <button
-            onClick={() => setDemo((d) => !d)}
-            className={`mt-2 w-full flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] font-medium transition-colors ${
-              demo
-                ? "bg-indigo-500/10 border-indigo-500/40 text-indigo-600 dark:text-indigo-400"
-                : "bg-[var(--muted)] border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-            }`}
-            title="Show real airborne traffic (temporary demo)"
-          >
-            <Sparkles className="w-3 h-3" />
-            {demo ? "Demo ON — showing live traffic" : "Demo mode"}
-          </button>
+          {/* Update frequency (live on/off lives in the bottom toolbar) */}
+          {live && (
+            <div className="mt-2 flex items-center gap-2 text-[10px] text-[var(--muted-foreground)]">
+              <span>Updates</span>
+              <select
+                value={intervalMs}
+                onChange={(e) => setIntervalMs(Number(e.target.value))}
+                className="text-[10px] px-1.5 py-0.5 rounded-md bg-[var(--muted)] border border-[var(--border)] text-[var(--foreground)]"
+                title="How often positions refresh"
+              >
+                {POLL_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>every {o.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Focused flight detail (combined cargo + live data) */}
@@ -728,6 +1045,19 @@ export function LiveRadarView({ trackedAWBs, selectedAWB, onSelect, onClose }: L
           </div>
         )}
       </div>
+      )}
+
+      {/* Re-open panel button when collapsed */}
+      {sidebarCollapsed && (
+        <button
+          onClick={() => setSidebarCollapsed(false)}
+          title="Show panel"
+          className="radar-hud radar-panel-in absolute left-4 top-4 z-[400] flex items-center gap-2 px-3 h-11 rounded-2xl text-sm font-semibold text-[var(--foreground)]"
+        >
+          <PanelLeftOpen className="w-5 h-5 text-sky-400" />
+          Flights
+        </button>
+      )}
     </div>
   );
 }

@@ -120,3 +120,116 @@ body {
 .maplibregl-ctrl-attrib {
   font-size: 9px;
 }
+
+/* ============================================================
+   LIVE RADAR — cinematic visuals (TV-grade)
+   ============================================================ */
+
+/* Plane marker: subtle float + heading rotation handled in JS.
+   The glow halo pulses so airborne aircraft feel "alive". */
+.radar-plane {
+  position: relative;
+  transition: transform 0.25s ease-out;
+  will-change: transform;
+}
+.radar-plane svg {
+  display: block;
+  filter: drop-shadow(0 0 3px rgba(56, 189, 248, 0.45));
+}
+.radar-plane--selected svg {
+  filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.9))
+          drop-shadow(0 0 12px rgba(251, 191, 36, 0.5));
+}
+.radar-plane--grounded svg {
+  filter: drop-shadow(0 0 2px rgba(148, 163, 184, 0.5));
+  opacity: 0.7;
+}
+
+/* Pulsing halo ring behind the selected aircraft */
+.radar-halo {
+  position: absolute;
+  inset: 50%;
+  width: 46px;
+  height: 46px;
+  margin: -23px 0 0 -23px;
+  border-radius: 9999px;
+  border: 1.5px solid rgba(251, 191, 36, 0.55);
+  animation: radar-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+  pointer-events: none;
+}
+@keyframes radar-ping {
+  0%   { transform: scale(0.4); opacity: 0.9; }
+  80%  { transform: scale(1.6); opacity: 0; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+/* Live "breathing" dot used in HUD chips */
+@keyframes radar-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.4; transform: scale(0.85); }
+}
+.radar-live-dot {
+  animation: radar-pulse 1.6s ease-in-out infinite;
+}
+
+/* Animated dashed route line (planned path drifts forward) */
+@keyframes radar-dash {
+  to { stroke-dashoffset: -16; }
+}
+
+/* HUD panel: premium frosted glass — consistent across every floating panel
+   (sidebar, toolbar, info rail, buttons). Translucent enough to feel like it
+   floats over the map, blurred enough to stay crisp and readable on a TV. */
+.radar-hud {
+  background: color-mix(in srgb, var(--card) 60%, transparent);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  box-shadow:
+    0 12px 48px -10px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 0 color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+/* Number "tick" animation when a stat updates */
+@keyframes radar-tick {
+  0%   { transform: translateY(4px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+.radar-tick {
+  animation: radar-tick 0.4s ease-out;
+}
+
+/* Animated progress shimmer */
+@keyframes radar-shimmer {
+  0%   { background-position: -120% 0; }
+  100% { background-position: 220% 0; }
+}
+.radar-progress-fill {
+  background-image: linear-gradient(
+    90deg,
+    var(--radar-accent, #38bdf8) 0%,
+    color-mix(in srgb, var(--radar-accent, #38bdf8) 60%, white) 50%,
+    var(--radar-accent, #38bdf8) 100%
+  );
+  background-size: 220% 100%;
+  animation: radar-shimmer 2.4s linear infinite;
+  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Smooth fly-in for the detail panel */
+@keyframes radar-slide-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.radar-panel-in {
+  animation: radar-slide-in 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Sweep beam for the radar logo badge */
+@keyframes radar-sweep {
+  to { transform: rotate(360deg); }
+}
+.radar-sweep {
+  animation: radar-sweep 3s linear infinite;
+  transform-origin: center;
+}
