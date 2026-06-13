@@ -112,15 +112,8 @@ export async function getAirports(codes: string[]): Promise<Record<string, [numb
 }
 
 export async function getFlights(
-  pairs: FlightQuery[],
-  demo = false
+  pairs: FlightQuery[]
 ): Promise<FlightPositionList> {
-  if (demo) {
-    const res = await fetch(`${API_BASE}/flights?demo=1`);
-    if (!res.ok) throw new Error("Error fetching demo flights");
-    return res.json();
-  }
-
   // Token: AWB:FLIGHT:ORIGIN:DEST:DEP_ISO (trailing fields optional). The AWB
   // has a hyphen, never a colon, so colon is a safe separator.
   const tokens = pairs

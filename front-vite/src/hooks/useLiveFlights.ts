@@ -7,7 +7,10 @@ import type { TrackedAWB } from "./useTrackedAWBs";
 // not just airborne (DEP) — that's how a delivered shipment still shows its route.
 const TRACKABLE_STATUSES = ["DEP", "ARR", "RCF", "NFD", "DLV"];
 
-const DEFAULT_INTERVAL_MS = 15_000; // poll cadence when live is ON
+// Poll cadence when live is ON. Default 5 min: FR24 caches positions ~5 min and
+// the frontend dead-reckons (interpolates) smoothly in between for free, so
+// polling faster just burns credits without improving what you see.
+const DEFAULT_INTERVAL_MS = 300_000;
 const MAX_DEAD_RECKON_S = 45; // stop extrapolating if polls stall
 const EARTH_RADIUS_NM = 3440.065; // for great-circle dead reckoning
 const FRAME_MS = 120; // ~8fps state commits — plenty smooth for cruising planes
@@ -110,19 +113,17 @@ export interface LiveFlight extends FlightPosition {
 interface UseLiveFlightsOptions {
   /** Extra in-air pairs the radar manages itself (its own active list). */
   extraPairs?: FlightPair[];
-  /** TEMPORARY: ignore pairs and show real airborne traffic for a demo. */
-  demo?: boolean;
 }
 
 export function useLiveFlights(
   trackedAWBs: TrackedAWB[],
   options: UseLiveFlightsOptions = {}
 ) {
-  const { extraPairs = [], demo = false } = options;
+  const { extraPairs = [] } = options;
   const [live, setLive] = useState<boolean>(() => readStored<boolean>("radarLive", false) === true);
   const [intervalMs, setIntervalMs] = useState<number>(() => {
     const n = readStored<number>("radarIntervalMs", DEFAULT_INTERVAL_MS);
-    return Number.isFinite(n) && n >= 5_000 ? n : DEFAULT_INTERVAL_MS;
+    return Number.isFinite(n) && n >= 60_000 ? n : DEFAULT_INTERVAL_MS;
   });
 
   const [displayFlights, setDisplayFlights] = useState<LiveFlight[]>([]);
@@ -168,7 +169,7 @@ export function useLiveFlights(
   }, [intervalMs]);
 
   const fetchFlights = useCallback(async () => {
-    if (!demo && pairs.length === 0) {
+    if (pairs.length === 0) {
       fixesRef.current = [];
       setDisplayFlights([]);
       setMatched(0);
@@ -178,7 +179,7 @@ export function useLiveFlights(
     setIsLoading(true);
     setError(null);
     try {
-      const res = await getFlights(pairs, demo);
+      const res = await getFlights(pairs);
       const now = performance.now();
       fixesRef.current = res.flights.map((f) => ({ ...f, receivedAt: now }));
       setMatched(res.matched);
@@ -204,7 +205,7 @@ export function useLiveFlights(
     } finally {
       setIsLoading(false);
     }
-  }, [pairs, demo]);
+  }, [pairs]);
 
   // Animation loop: glide planes forward between polls via dead reckoning.
   useEffect(() => {
@@ -237,7 +238,7 @@ export function useLiveFlights(
   // we skip here to avoid a duplicate fetch on mount.
   useEffect(() => {
     if (!live) fetchRef.current();
-  }, [pairsKey, live, demo]);
+  }, [pairsKey, live]);
 
   // Polling: only while live is ON and the tab is visible. Keyed on pairsKey
   // (content), not fetchFlights identity, so an unrelated AWB refresh doesn't
@@ -273,7 +274,7 @@ export function useLiveFlights(
       clear();
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [live, intervalMs, pairsKey, demo]);
+  }, [live, intervalMs, pairsKey]);
 
   return {
     flights: displayFlights,

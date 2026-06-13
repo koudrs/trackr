@@ -11,7 +11,9 @@ __pycache__
 .pytest_cache
 .ruff_cache
 
-# Node
+# Node (frontend deps + build are recreated inside the image)
+front-vite/node_modules
+front-vite/dist
 front/node_modules
 front/.next
 

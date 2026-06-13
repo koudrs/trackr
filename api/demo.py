@@ -35,6 +35,10 @@ DEMO_FLIGHTS: list[dict] = [
      "type": "B744", "desc": "BOEING 747-400F", "stops": ["NRT", "ANC", "MIA"], "progress": 0.15},
     {"callsign": "QR8112", "flight": "QR8112", "awb": "157-66778899",
      "type": "B77L", "desc": "BOEING 777F", "stops": ["DOH", "LUX", "MIA", "PTY"], "progress": 0.44},
+    {"callsign": "THY6451", "flight": "TK6451", "awb": "235-88990011",
+     "type": "B77L", "desc": "BOEING 777F", "stops": ["IST", "CMN", "MIA", "PTY"], "progress": 0.33},
+    {"callsign": "CSN461", "flight": "CZ461", "awb": "461-11223300",
+     "type": "B77L", "desc": "BOEING 777F", "stops": ["CAN", "SZX", "ANC", "MIA"], "progress": 0.68},
 ]
 
 

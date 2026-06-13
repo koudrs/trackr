@@ -52,8 +52,8 @@ function getStatusInfo(tracked: TrackedAWB): { icon: React.ReactNode; label: str
     return {
       icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />,
       label: "Loading",
-      color: "text-blue-500",
-      bgColor: "bg-blue-500/20",
+      color: "text-amber-500",
+      bgColor: "bg-amber-500/20",
       priority: 0,
     };
   }
@@ -72,8 +72,8 @@ function getStatusInfo(tracked: TrackedAWB): { icon: React.ReactNode; label: str
       return {
         icon: <CheckCircle2 className="h-3.5 w-3.5" />,
         label: "Delivered",
-        color: "text-blue-500",
-        bgColor: "bg-blue-500/20",
+        color: "text-amber-500",
+        bgColor: "bg-amber-500/20",
         priority: 10,
       };
     }
@@ -126,8 +126,8 @@ function getStatusInfo(tracked: TrackedAWB): { icon: React.ReactNode; label: str
       return {
         icon: <Clock className="h-3.5 w-3.5" />,
         label: "Booked",
-        color: "text-blue-500",
-        bgColor: "bg-blue-500/20",
+        color: "text-amber-500",
+        bgColor: "bg-amber-500/20",
         priority: 7,
       };
     }
@@ -135,7 +135,7 @@ function getStatusInfo(tracked: TrackedAWB): { icon: React.ReactNode; label: str
   return {
     icon: <Clock className="h-3.5 w-3.5" />,
     label: "Pending",
-    color: "text-gray-500",
+    color: "text-[var(--muted-foreground)]",
     bgColor: "bg-gray-500/20",
     priority: 8,
   };
@@ -287,8 +287,8 @@ export function TrackingSidebar({
         <div className="p-4 lg:p-5 border-b border-[var(--border)]">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="p-2 rounded-lg bg-blue-100">
-                <Plane className="h-5 w-5 text-blue-600" />
+              <div className="p-2 rounded-lg bg-[var(--muted)]">
+                <Plane className="h-5 w-5 text-amber-600" />
               </div>
               <div>
                 <h2 className="text-sm font-semibold">My Trackings</h2>
@@ -368,7 +368,7 @@ export function TrackingSidebar({
               {canAddConnection && (
                 <button
                   onClick={(e) => { e.stopPropagation(); setAddingConnectionFor(tracked.awb); }}
-                  className="p-0.5 rounded hover:bg-blue-500/20 text-blue-500"
+                  className="p-0.5 rounded hover:bg-amber-500/20 text-amber-500"
                   title="Add connecting flight"
                 >
                   <Link2 className="h-2.5 w-2.5" />
@@ -407,7 +407,7 @@ export function TrackingSidebar({
               {hasConnection && connectionData?.data && (
                 <>
                   <span className="text-[var(--muted-foreground)]">→</span>
-                  <span className="font-mono text-blue-500">{connectionData.data.destination}</span>
+                  <span className="font-mono text-amber-500">{connectionData.data.destination}</span>
                 </>
               )}
             </div>
@@ -428,11 +428,11 @@ export function TrackingSidebar({
           {/* Connection info badge */}
           {hasConnection && connectionData && (
             <div
-              className="mt-1.5 flex items-center gap-1 text-[9px] px-1.5 py-1 rounded bg-blue-500/10 border border-blue-500/20 cursor-pointer"
+              className="mt-1.5 flex items-center gap-1 text-[9px] px-1.5 py-1 rounded bg-amber-500/10 border border-amber-500/20 cursor-pointer"
               onClick={(e) => { e.stopPropagation(); onSelect(connectionData.awb); }}
             >
-              <Link2 className="h-2.5 w-2.5 text-blue-500" />
-              <span className="font-mono text-blue-500">{connectionData.awb}</span>
+              <Link2 className="h-2.5 w-2.5 text-amber-500" />
+              <span className="font-mono text-amber-500">{connectionData.awb}</span>
               <span className="text-[var(--muted-foreground)]">
                 {connectionData.data?.origin} → {connectionData.data?.destination}
               </span>
@@ -449,7 +449,7 @@ export function TrackingSidebar({
         {isAddingConnection && (
           <form
             onSubmit={(e) => handleAddConnection(e, tracked.awb)}
-            className="p-2 bg-blue-500/5 border-b border-[var(--border)]"
+            className="p-2 bg-amber-500/5 border-b border-[var(--border)]"
             onClick={(e) => e.stopPropagation()}
           >
             <p className="text-[9px] text-[var(--muted-foreground)] mb-1.5">
@@ -461,12 +461,12 @@ export function TrackingSidebar({
                 placeholder="810-XXXXXXXX"
                 value={connectionInput}
                 onChange={(e) => setConnectionInput(e.target.value)}
-                className="flex-1 h-6 px-2 rounded border border-[var(--border)] bg-[var(--background)] text-[10px] font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="flex-1 h-6 px-2 rounded border border-[var(--border)] bg-[var(--background)] text-[10px] font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
                 autoFocus
               />
               <button
                 type="submit"
-                className="px-2 h-6 rounded bg-blue-500 text-white text-[10px] font-medium hover:bg-blue-600"
+                className="px-2 h-6 rounded bg-amber-500 text-white text-[10px] font-medium hover:bg-amber-600"
               >
                 Add
               </button>

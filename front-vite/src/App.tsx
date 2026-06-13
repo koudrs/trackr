@@ -1,11 +1,10 @@
 import { useState, useEffect } from "react";
-import { Menu, Moon, Sun, Radar, List } from "lucide-react";
+import { Menu, Moon, Sun, Radar, List, ChevronRight } from "lucide-react";
 import { TrackingForm } from "./components/TrackingForm";
 import { TrackingResultCard } from "./components/TrackingResult";
 import { SupportedCarriers } from "./components/SupportedCarriers";
 import { TrackingSidebar } from "./components/TrackingSidebar";
 import { Dashboard } from "./components/Dashboard";
-import { FlightRadar } from "./components/FlightRadar";
 import { LiveRadarView } from "./components/LiveRadarView";
 import { LoadingCard } from "./components/LoadingCard";
 import { ErrorCard } from "./components/ErrorCard";
@@ -187,76 +186,77 @@ function App() {
           bleed through behind the map. */}
       <main className={`flex-1 flex flex-col h-screen overflow-hidden ${view === "radar" ? "hidden" : ""}`}>
         {/* Header */}
-        <header className="shrink-0 bg-[var(--card)] border-b border-[var(--border)] px-4 lg:px-6 py-4">
+        <header className="shrink-0 bg-[var(--card)] border-b border-[var(--border)] px-4 lg:px-6 py-3">
           <div className="max-w-5xl mx-auto">
-            <div className="flex items-center justify-between gap-4">
-              {/* Mobile menu button + Title */}
-              <div className="flex items-center gap-3">
+            <div className="flex items-center justify-between gap-3">
+              {/* Mobile menu button + Brand */}
+              <div className="flex items-center gap-3 shrink-0">
                 <button
                   onClick={() => setSidebarOpen(true)}
                   className="lg:hidden p-2 -ml-2 rounded-lg hover:bg-[var(--muted)] text-[var(--foreground)]"
                 >
                   <Menu className="h-5 w-5" />
                 </button>
-                <div>
-                  <h1 className="text-lg lg:text-xl font-bold">Cargo Tracking</h1>
-                  <p className="text-xs lg:text-sm text-[var(--muted-foreground)] hidden sm:block">
-                    Air cargo tracking system
-                  </p>
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500 flex items-center justify-center shadow-md shadow-amber-500/30">
+                    <Radar className="h-5 w-5 text-white" />
+                  </div>
+                  <div>
+                    <h1 className="text-base lg:text-lg font-bold leading-none">Cargo Tracking</h1>
+                    <p className="text-[10px] lg:text-xs text-[var(--muted-foreground)] hidden sm:block mt-0.5">
+                      Real-time air cargo
+                    </p>
+                  </div>
                 </div>
               </div>
 
-              {/* View switch: Shipments / Radar */}
-              <div className="flex items-center rounded-lg border border-[var(--border)] bg-[var(--muted)] p-0.5">
+              {/* View switch: Shipments / Radar — prominent segmented control */}
+              <div className="flex items-center rounded-xl border border-[var(--border)] bg-[var(--muted)]/60 p-1 shadow-inner">
                 <button
                   onClick={() => setView("tracking")}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold transition-all ${
                     view === "tracking"
-                      ? "bg-[var(--card)] text-[var(--foreground)] shadow-sm"
-                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                      ? "bg-amber-500 text-white shadow-md shadow-amber-500/30"
+                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--card)]/60"
                   }`}
-                  title="Shipments"
+                  title="Shipments list"
                 >
                   <List className="h-4 w-4" />
-                  <span className="hidden md:inline">Shipments</span>
+                  <span className="hidden sm:inline">Shipments</span>
                 </button>
                 <button
                   onClick={() => setView("radar")}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold transition-all ${
                     view === "radar"
-                      ? "bg-[var(--card)] text-[var(--foreground)] shadow-sm"
-                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                      ? "bg-amber-500 text-white shadow-md shadow-amber-500/30"
+                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--card)]/60"
                   }`}
-                  title="Live Radar"
+                  title="Live flight radar"
                 >
                   <Radar className="h-4 w-4" />
-                  <span className="hidden md:inline">Radar</span>
+                  <span className="hidden sm:inline">Radar</span>
+                  {trackedAWBs.length > 0 && (
+                    <span className={`ml-0.5 flex items-center justify-center min-w-5 h-5 px-1 rounded-full text-[10px] font-bold ${
+                      view === "radar" ? "bg-white/25" : "bg-amber-500/15 text-amber-500"
+                    }`}>
+                      {trackedAWBs.length}
+                    </span>
+                  )}
                 </button>
               </div>
 
-              {/* Dark mode toggle */}
-              <button
-                onClick={() => setDarkMode(!darkMode)}
-                className="p-2 rounded-lg hover:bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
-                title={darkMode ? "Light mode" : "Dark mode"}
-              >
-                {darkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-              </button>
-
-              {/* Tracking count badge for mobile */}
-              {trackedAWBs.length > 0 && (
+              {/* Right actions: search + theme */}
+              <div className="flex items-center gap-2 shrink-0">
+                <div className="hidden sm:block">
+                  <TrackingForm onSubmit={handleTrack} onClear={handleClear} isLoading={isLoading} />
+                </div>
                 <button
-                  onClick={() => setSidebarOpen(true)}
-                  className="lg:hidden flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-medium"
+                  onClick={() => setDarkMode(!darkMode)}
+                  className="p-2 rounded-lg hover:bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+                  title={darkMode ? "Light mode" : "Dark mode"}
                 >
-                  <span>{trackedAWBs.length}</span>
-                  <span className="hidden xs:inline">shipments</span>
+                  {darkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
                 </button>
-              )}
-
-              {/* Search form */}
-              <div className="hidden sm:block">
-                <TrackingForm onSubmit={handleTrack} onClear={handleClear} isLoading={isLoading} />
               </div>
             </div>
 
@@ -270,10 +270,28 @@ function App() {
         {/* Content */}
         <div className="flex-1 px-4 lg:px-6 py-6 overflow-y-auto">
           <div className="max-w-5xl mx-auto">
-            {/* Top Row: Flight Radar + Dashboard Stats (side by side on lg) */}
+            {/* Top Row: a CTA to open the real radar + Dashboard stats */}
             {trackedAWBs.length > 0 && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-                <FlightRadar trackedAWBs={trackedAWBs} onSelect={handleSelectFromSidebar} />
+                <button
+                  onClick={() => setView("radar")}
+                  className="group relative overflow-hidden rounded-xl border border-[var(--border)] bg-gradient-to-br from-amber-500/10 to-transparent p-5 text-left transition-all hover:border-amber-500/40 hover:shadow-md"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-xl bg-amber-500 flex items-center justify-center shadow-md shadow-amber-500/30 group-hover:scale-105 transition-transform">
+                        <Radar className="h-6 w-6 text-white" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-bold text-[var(--foreground)]">Open Live Radar</h3>
+                        <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
+                          Track your {trackedAWBs.length} shipment{trackedAWBs.length > 1 ? "s" : ""} on a live world map
+                        </p>
+                      </div>
+                    </div>
+                    <ChevronRight className="h-5 w-5 text-[var(--muted-foreground)] group-hover:text-amber-500 group-hover:translate-x-1 transition-all" />
+                  </div>
+                </button>
                 <Dashboard trackedAWBs={trackedAWBs} />
               </div>
             )}
@@ -370,6 +388,8 @@ function App() {
           onClose={() => setView("tracking")}
           darkMode={darkMode}
           onToggleTheme={() => setDarkMode(!darkMode)}
+          onAddAWB={addAWB}
+          onRemoveAWB={removeAWB}
         />
       )}
     </div>

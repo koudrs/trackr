@@ -1,42 +1,46 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f5f5f5;
-  --foreground: #171717;
+  /* Light theme — NEUTRAL greys (no blue), but legible: a soft grey background
+     (not stark white), crisp white cards, clearly VISIBLE borders, and strong
+     dark text. Fixes the washed-out / hard-to-read-over-the-map problem. */
+  --background: #f2f2f2;        /* soft neutral grey */
+  --foreground: #111111;        /* near-black text */
   --card: #ffffff;
-  --card-foreground: #171717;
-  --primary: #171717;
+  --card-foreground: #111111;
+  --primary: #111111;
   --primary-foreground: #fafafa;
-  --secondary: #f5f5f5;
-  --secondary-foreground: #171717;
-  --muted: #f0f0f0;
-  --muted-foreground: #737373;
-  --accent: #f0f0f0;
-  --accent-foreground: #171717;
+  --secondary: #e8e8e8;
+  --secondary-foreground: #1a1a1a;
+  --muted: #ececec;            /* visible against white cards */
+  --muted-foreground: #595959;  /* readable secondary text */
+  --accent: #e0e0e0;
+  --accent-foreground: #111111;
   --destructive: #dc2626;
-  --border: #e5e5e5;
-  --input: #e5e5e5;
-  --ring: #a3a3a3;
+  --border: #d0d0d0;            /* clearly visible neutral borders */
+  --input: #d0d0d0;
+  --ring: #9a9a9a;
   --radius: 0.5rem;
 }
 
 .dark {
-  --background: #171717;
+  /* Dark theme — neutral black/grey (Linear / Vercel style). No blues. */
+  --background: #0a0a0a;
   --foreground: #fafafa;
-  --card: #262626;
+  --card: #161616;
   --card-foreground: #fafafa;
   --primary: #fafafa;
-  --primary-foreground: #171717;
-  --secondary: #262626;
+  --primary-foreground: #0a0a0a;
+  --secondary: #1c1c1c;
   --secondary-foreground: #fafafa;
-  --muted: #262626;
-  --muted-foreground: #a3a3a3;
-  --accent: #404040;
+  --muted: #1c1c1c;
+  --muted-foreground: #a1a1a1;
+  --accent: #2a2a2a;
   --accent-foreground: #fafafa;
-  --destructive: #b91c1c;
+  --destructive: #e5484d;
   --border: rgba(255, 255, 255, 0.1);
-  --input: rgba(255, 255, 255, 0.15);
-  --ring: #525252;
+  --input: rgba(255, 255, 255, 0.14);
+  --ring: #6b6b6b;
 }
 
 /* Expose the CSS-variable theme as Tailwind color tokens so shadcn-style
@@ -181,9 +185,18 @@ body {
    (sidebar, toolbar, info rail, buttons). Translucent enough to feel like it
    floats over the map, blurred enough to stay crisp and readable on a TV. */
 .radar-hud {
-  background: color-mix(in srgb, var(--card) 60%, transparent);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  /* Light default: more opaque so panels stay readable over the bright map. */
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  border: 1px solid color-mix(in srgb, var(--foreground) 16%, transparent);
+  box-shadow:
+    0 12px 40px -10px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.6);
+}
+.dark .radar-hud {
+  /* Dark: more translucent — it floats over the dark globe beautifully. */
+  background: color-mix(in srgb, var(--card) 62%, transparent);
   border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
   box-shadow:
     0 12px 48px -10px rgba(0, 0, 0, 0.6),
@@ -224,6 +237,30 @@ body {
 .radar-panel-in {
   animation: radar-slide-in 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+/* Directional panel entrances (springy ease-out) */
+@keyframes radar-in-left {
+  from { opacity: 0; transform: translateX(-24px) scale(0.98); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+@keyframes radar-in-right {
+  from { opacity: 0; transform: translateX(24px) scale(0.98); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+@keyframes radar-in-up {
+  from { opacity: 0; transform: translateY(16px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.radar-in-left  { animation: radar-in-left  0.45s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.radar-in-right { animation: radar-in-right 0.45s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.radar-in-up    { animation: radar-in-up    0.45s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* Generic interactive transition for buttons/tools */
+.radar-tool {
+  transition: background-color 0.2s ease, color 0.2s ease, transform 0.12s ease,
+    box-shadow 0.2s ease;
+}
+.radar-tool:active { transform: scale(0.94); }
 
 /* Sweep beam for the radar logo badge */
 @keyframes radar-sweep {

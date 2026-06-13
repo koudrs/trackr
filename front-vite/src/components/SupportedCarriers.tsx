@@ -22,14 +22,14 @@ export function SupportedCarriers() {
   return (
     <div className="space-y-4">
       {/* Welcome Card */}
-      <div className="rounded-xl border border-[var(--border)]/60 bg-gradient-to-br from-blue-50 to-indigo-50 p-6 shadow-sm">
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-sm">
         <div className="flex items-start gap-4">
-          <div className="p-3 rounded-full bg-blue-100">
-            <Package className="h-6 w-6 text-blue-600" />
+          <div className="p-3 rounded-full bg-[var(--muted)]">
+            <Package className="h-6 w-6 text-amber-500" />
           </div>
           <div className="flex-1">
-            <h2 className="text-lg font-bold text-gray-900">Welcome to Cargo Tracking</h2>
-            <p className="text-sm text-gray-600 mt-1">
+            <h2 className="text-lg font-bold text-[var(--foreground)]">Welcome to Cargo Tracking</h2>
+            <p className="text-sm text-[var(--muted-foreground)] mt-1">
               Real-time air cargo tracking system
             </p>
           </div>
@@ -37,28 +37,28 @@ export function SupportedCarriers() {
 
         {/* How it works */}
         <div className="mt-5 grid gap-3 sm:grid-cols-3">
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-white/70 border border-white">
-            <div className="w-6 h-6 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center">1</div>
-            <span className="text-xs text-gray-700">Enter your AWB</span>
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-[var(--muted)]/40 border border-[var(--border)]">
+            <div className="w-6 h-6 rounded-full bg-amber-500 text-white text-xs font-bold flex items-center justify-center">1</div>
+            <span className="text-xs text-[var(--foreground)]">Enter your AWB</span>
           </div>
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-white/70 border border-white">
-            <div className="w-6 h-6 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center">2</div>
-            <span className="text-xs text-gray-700">Automatic tracking</span>
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-[var(--muted)]/40 border border-[var(--border)]">
+            <div className="w-6 h-6 rounded-full bg-amber-500 text-white text-xs font-bold flex items-center justify-center">2</div>
+            <span className="text-xs text-[var(--foreground)]">Automatic tracking</span>
           </div>
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-white/70 border border-white">
-            <div className="w-6 h-6 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center">3</div>
-            <span className="text-xs text-gray-700">Updates every 30 min</span>
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-[var(--muted)]/40 border border-[var(--border)]">
+            <div className="w-6 h-6 rounded-full bg-amber-500 text-white text-xs font-bold flex items-center justify-center">3</div>
+            <span className="text-xs text-[var(--foreground)]">Updates every 30 min</span>
           </div>
         </div>
 
         {/* AWB Format hint */}
-        <div className="mt-4 p-3 rounded-lg bg-white/80 border border-blue-100">
-          <div className="flex items-center gap-2 text-xs text-gray-600">
-            <Search className="h-3.5 w-3.5 text-blue-500" />
+        <div className="mt-4 p-3 rounded-lg bg-[var(--muted)]/40 border border-[var(--border)]">
+          <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
+            <Search className="h-3.5 w-3.5 text-amber-500" />
             <span>AWB Format:</span>
-            <code className="font-mono px-1.5 py-0.5 rounded bg-gray-100 text-gray-800">XXX-XXXXXXXX</code>
-            <ArrowRight className="h-3 w-3 text-gray-400" />
-            <span className="text-gray-500">Example: 057-12345678</span>
+            <code className="font-mono px-1.5 py-0.5 rounded bg-[var(--secondary)] text-[var(--foreground)]">XXX-XXXXXXXX</code>
+            <ArrowRight className="h-3 w-3 text-[var(--muted-foreground)]" />
+            <span className="text-[var(--muted-foreground)]">Example: 057-12345678</span>
           </div>
         </div>
       </div>
@@ -68,10 +68,10 @@ export function SupportedCarriers() {
         <div className="p-4 border-b border-[var(--border)]/60 bg-[var(--muted)]/30">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold flex items-center gap-2">
-              <Plane className="h-4 w-4 text-blue-500" />
+              <Plane className="h-4 w-4 text-amber-500" />
               Supported Airlines
             </h3>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-500 font-medium">
               {CARRIERS.length} carriers
             </span>
           </div>
@@ -84,7 +84,7 @@ export function SupportedCarriers() {
                 className="flex items-center justify-between p-2.5 rounded-lg border border-[var(--border)]/40 bg-[var(--muted)]/20 hover:bg-[var(--muted)]/40 transition-colors"
               >
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-medium">
+                  <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-500 font-medium">
                     {carrier.iata}
                   </span>
                   <span className="text-xs font-medium">{carrier.name}</span>

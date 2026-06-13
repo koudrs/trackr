@@ -10,8 +10,8 @@ export function LoadingCard({ awb, message = "Processing tracking..." }: Loading
     <div className="w-full rounded-lg border border-[var(--border)]/60 bg-[var(--card)] shadow-sm">
       <div className="p-6">
         <div className="flex items-center gap-4">
-          <div className="p-3 rounded-full bg-blue-100">
-            <Loader2 className="h-6 w-6 text-blue-600 animate-spin" />
+          <div className="p-3 rounded-full bg-[var(--muted)]">
+            <Loader2 className="h-6 w-6 text-amber-600 animate-spin" />
           </div>
           <div>
             <p className="font-mono text-lg font-bold">{awb}</p>
@@ -53,8 +53,8 @@ export function LoadingCard({ awb, message = "Processing tracking..." }: Loading
       </div>
 
       {/* Progress indicator */}
-      <div className="border-t border-[var(--border)] px-6 py-3 bg-blue-50/50">
-        <div className="flex items-center gap-2 text-xs text-blue-600">
+      <div className="border-t border-[var(--border)] px-6 py-3 bg-[var(--muted)]/40">
+        <div className="flex items-center gap-2 text-xs text-amber-600">
           <Loader2 className="h-3 w-3 animate-spin" />
           <span>Connecting to airline...</span>
         </div>

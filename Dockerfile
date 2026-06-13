@@ -85,11 +85,14 @@ ENV XDG_DATA_HOME=/app/.local/share
 # Container detection for Scrapling
 ENV DIGITALOCEAN_APP_PLATFORM=true
 
+# Port: Render injects $PORT at runtime; default to 3000 for local `docker run`.
+# A single uvicorn process serves both the API (/api/*) and the built frontend.
+ENV PORT=3000
 EXPOSE 3000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl -f http://localhost:3000/api/health || exit 1
+# Health check (uses the same $PORT)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+    CMD curl -f "http://localhost:${PORT}/api/health" || exit 1
 
-# Single uvicorn process serves both API (/api/*) and static frontend
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "3000"]
+# Shell form so ${PORT} is expanded (Render sets it; falls back to 3000 locally).
+CMD uvicorn api.main:app --host 0.0.0.0 --port ${PORT}

@@ -30,16 +30,16 @@ interface TrackingResultProps {
 }
 
 const STATUS_CONFIG: Record<string, { label: string; icon: LucideIcon; color: string }> = {
-  BKD: { label: "Booked", icon: Calendar, color: "text-gray-500" },
+  BKD: { label: "Booked", icon: Calendar, color: "text-[var(--muted-foreground)]" },
   RCS: { label: "Received", icon: PackageCheck, color: "text-yellow-500" },
   MAN: { label: "Manifested", icon: Package, color: "text-orange-500" },
   DEP: { label: "Departed", icon: PlaneTakeoff, color: "text-red-500" },
   ARR: { label: "Arrived", icon: PlaneLanding, color: "text-green-500" },
   RCF: { label: "At destination", icon: Warehouse, color: "text-teal-500" },
   NFD: { label: "Ready", icon: Bell, color: "text-cyan-500" },
-  DLV: { label: "Delivered", icon: CheckCircle2, color: "text-blue-500" },
+  DLV: { label: "Delivered", icon: CheckCircle2, color: "text-amber-500" },
   DDL: { label: "Delayed", icon: Clock, color: "text-orange-500" },
-  UNK: { label: "Processing", icon: Circle, color: "text-gray-500" },
+  UNK: { label: "Processing", icon: Circle, color: "text-[var(--muted-foreground)]" },
 };
 
 function formatDateTime(dateStr: string | null): string {
@@ -117,7 +117,7 @@ export function TrackingResultCard({ data, connection, onSelectConnection }: Tra
             <div className="flex items-center gap-2">
               <p className="font-mono text-lg font-bold">{data.awb}</p>
               {connection && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500 font-medium">
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 font-medium">
                   {connection.isParent ? "Connection" : "Primary"}
                 </span>
               )}
@@ -141,8 +141,8 @@ export function TrackingResultCard({ data, connection, onSelectConnection }: Tra
             {/* Show full route if connection exists */}
             {connection?.data && !connection.isParent && (
               <>
-                <ArrowRight className="h-3 w-3 text-blue-500" />
-                <span className="font-mono text-base font-bold text-blue-500">{connection.data.destination || "?"}</span>
+                <ArrowRight className="h-3 w-3 text-amber-500" />
+                <span className="font-mono text-base font-bold text-amber-500">{connection.data.destination || "?"}</span>
               </>
             )}
           </div>
@@ -165,12 +165,12 @@ export function TrackingResultCard({ data, connection, onSelectConnection }: Tra
         {/* Connection Card */}
         {connection && connection.data && (
           <div
-            className="mt-3 p-3 rounded-lg border border-blue-500/30 bg-blue-500/5 cursor-pointer hover:bg-blue-500/10 transition-colors"
+            className="mt-3 p-3 rounded-lg border border-amber-500/30 bg-amber-500/5 cursor-pointer hover:bg-amber-500/10 transition-colors"
             onClick={() => onSelectConnection?.(connection.awb)}
           >
             <div className="flex items-center gap-2 mb-2">
-              <Link2 className="h-4 w-4 text-blue-500" />
-              <span className="text-xs font-medium text-blue-500">
+              <Link2 className="h-4 w-4 text-amber-500" />
+              <span className="text-xs font-medium text-amber-500">
                 {connection.isParent ? "Primary Shipment" : "Connecting Flight"}
               </span>
             </div>

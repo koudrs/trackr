@@ -17,9 +17,12 @@ export interface TrackedAWB {
   parentAWB?: string; // If this is a connection, reference to parent AWB
 }
 
+const STORAGE_KEY = "tracked_awbs";
+
 export function useTrackedAWBs() {
   const [trackedAWBs, setTrackedAWBs] = useState<TrackedAWB[]>([]);
   const intervalRef = useRef<number | null>(null);
+  const hydratedRef = useRef(false);
 
 
   const refreshAWB = useCallback(async (awb: string) => {
@@ -180,6 +183,55 @@ export function useTrackedAWBs() {
       }
     };
   }, [trackedAWBs.length, refreshAll]);
+
+  // Hydrate from localStorage on mount: re-track each saved AWB so the list
+  // (shared by the normal view AND the radar) survives reloads.
+  useEffect(() => {
+    let saved: { awb: string; connectionAWB?: string; parentAWB?: string }[] = [];
+    try {
+      saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    } catch {
+      saved = [];
+    }
+    if (!Array.isArray(saved) || saved.length === 0) {
+      hydratedRef.current = true;
+      return;
+    }
+    // Defer state updates to a microtask so they don't run synchronously in the
+    // effect body, then fetch fresh data for each saved AWB.
+    (async () => {
+      setTrackedAWBs(
+        saved.map((s) => ({
+          awb: s.awb, data: null, lastUpdated: new Date().toISOString(),
+          isLoading: true, error: null,
+          connectionAWB: s.connectionAWB, parentAWB: s.parentAWB,
+        }))
+      );
+      const results = await Promise.allSettled(
+        saved.map((s) => trackAWB(s.awb).then((data) => ({ awb: s.awb, data })))
+      );
+      setTrackedAWBs((prev) =>
+        prev.map((t) => {
+          const r = results.find(
+            (x) => x.status === "fulfilled" && x.value.awb === t.awb
+          ) as PromiseFulfilledResult<{ awb: string; data: TrackingResult }> | undefined;
+          return r
+            ? { ...t, data: r.value.data, isLoading: false, lastUpdated: new Date().toISOString() }
+            : { ...t, isLoading: false };
+        })
+      );
+      hydratedRef.current = true;
+    })();
+  }, []);
+
+  // Persist the AWB list (codes + connection links only) whenever it changes.
+  useEffect(() => {
+    if (!hydratedRef.current) return; // don't overwrite storage before hydration
+    const slim = trackedAWBs.map((t) => ({
+      awb: t.awb, connectionAWB: t.connectionAWB, parentAWB: t.parentAWB,
+    }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(slim));
+  }, [trackedAWBs]);
 
   return {
     trackedAWBs,

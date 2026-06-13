@@ -39,8 +39,8 @@ export function Dashboard({ trackedAWBs }: DashboardProps) {
         {/* Total */}
         <div className="rounded-xl p-4 flex flex-col justify-center border border-[var(--border)]">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-blue-500/10">
-              <TrendingUp className="h-5 w-5 text-blue-500" />
+            <div className="p-2 rounded-lg bg-amber-500/10">
+              <TrendingUp className="h-5 w-5 text-amber-500" />
             </div>
             <div>
               <p className="text-2xl font-bold text-[var(--foreground)]">{totalTracking}</p>
@@ -65,8 +65,8 @@ export function Dashboard({ trackedAWBs }: DashboardProps) {
         {/* Delivered - BLUE */}
         <div className="rounded-xl p-4 flex flex-col justify-center border border-[var(--border)]">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-blue-500/10">
-              <CheckCircle2 className="h-5 w-5 text-blue-500" />
+            <div className="p-2 rounded-lg bg-amber-500/10">
+              <CheckCircle2 className="h-5 w-5 text-amber-500" />
             </div>
             <div>
               <p className="text-2xl font-bold text-[var(--foreground)]">{delivered}</p>
@@ -100,7 +100,7 @@ export function Dashboard({ trackedAWBs }: DashboardProps) {
         <div className="h-2.5 bg-[var(--muted)] rounded-full overflow-hidden flex">
           {delivered > 0 && (
             <div
-              className="bg-blue-500 h-full"
+              className="bg-amber-500 h-full"
               style={{ width: `${(delivered / totalTracking) * 100}%` }}
             />
           )}
@@ -127,7 +127,7 @@ export function Dashboard({ trackedAWBs }: DashboardProps) {
         <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2.5 text-[10px]">
           {delivered > 0 && (
             <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-blue-500" />
+              <span className="w-2 h-2 rounded-full bg-amber-500" />
               <span className="text-[var(--muted-foreground)]">Delivered ({delivered})</span>
             </span>
           )}

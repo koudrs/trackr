@@ -30,6 +30,7 @@ AIRPORTS: dict[str, tuple[float, float]] = {
     "FRA": (50.037, 8.562),     # Frankfurt
     # Americas
     "ANC": (61.174, -149.996),  # Anchorage (classic transpacific cargo stop)
+    "CMN": (33.367, -7.590),    # Casablanca (Morocco)
     "MIA": (25.793, -80.290),   # Miami
     "PTY": (9.071, -79.383),    # Panama Tocumen
     "JFK": (40.640, -73.779),   # New York JFK

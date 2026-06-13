@@ -10,7 +10,12 @@ import type { TrackingResult, TrackingEvent } from "./api";
  * Events are newest-first (index 0 = latest).
  */
 
-export type JourneyPhase = "origin" | "in_flight" | "at_airport" | "delivered" | "unknown";
+export type JourneyPhase =
+  | "awaiting_departure" // accepted at origin, not departed yet
+  | "in_flight"          // departed, en route (may or may not have a live signal)
+  | "at_airport"         // landed at an intermediate stop, waiting for next leg
+  | "delivered"
+  | "unknown";
 
 export interface Leg {
   flight: string;
@@ -65,7 +70,7 @@ export function analyzeJourney(data: TrackingResult | null): JourneyState {
   if (sc === "DEP") {
     return {
       ...empty, phase: "in_flight", currentFlight: latest.flight,
-      from: latest.location, to: destination, legs,
+      from: latest.location ?? origin, to: destination, legs,
     };
   }
 
@@ -84,5 +89,13 @@ export function analyzeJourney(data: TrackingResult | null): JourneyState {
     return { ...empty, phase: "at_airport", at: here ?? destination, legs };
   }
 
-  return { ...empty, phase: "origin", at: origin ?? latest.location, legs };
+  // Accepted/booked at origin but not departed yet → awaiting its flight.
+  // Use the first booked leg's flight (if any) as the upcoming flight.
+  const firstFlight = legs.find((l) => l.flight)?.flight ?? null;
+  return {
+    ...empty, phase: "awaiting_departure",
+    at: origin ?? latest.location,
+    from: origin ?? latest.location, to: destination,
+    nextFlight: firstFlight, nextTo: destination, legs,
+  };
 }

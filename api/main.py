@@ -28,7 +28,7 @@ from api.airlines import callsign_candidates
 from api.airports import get_airport, haversine_nm
 from api.carriers import get_carrier, list_carriers
 from api.demo import build_demo
-from api.fr24 import fetch_positions_by_callsigns, fetch_track, fr24_enabled
+from api.fr24 import fetch_positions_by_flights, fetch_track, fr24_enabled
 from api.models import FlightPosition, FlightPositionList, TrackingError, TrackingResult
 
 # Configure logging
@@ -315,16 +315,18 @@ async def _fetch_airplanes_live(callsigns: list[str]) -> list[dict]:
     return aircraft
 
 
-async def _fetch_aircraft(callsigns: list[str]) -> list[dict]:
+async def _fetch_aircraft(callsigns: list[str], flight_numbers: list[str]) -> list[dict]:
     """Fetch live aircraft state, preferring FR24 and falling back to airplanes.live.
 
-    Both return the same normalized aircraft-dict shape, so the rest of the
-    endpoint is source-agnostic. FR24 gives a `fr24_id` we can use to pull the
-    real flown track later.
+    FR24 is queried by IATA flight number (flight-summary -> flight-tracks), which
+    DOES cover cargo flights. airplanes.live is queried by ICAO callsign. Both
+    return the same normalized aircraft-dict shape (FR24 also includes a `trail`),
+    so the rest of the endpoint is source-agnostic.
     """
-    if fr24_enabled():
+    if fr24_enabled() and flight_numbers:
         try:
-            data = await fetch_positions_by_callsigns(callsigns)
+            today = datetime.now(UTC).strftime("%Y-%m-%d")
+            data = await fetch_positions_by_flights(flight_numbers, today)
             if data:
                 return data
             # FR24 reachable but matched nothing — try the community feed too.
@@ -447,8 +449,11 @@ async def get_flights(
     if not callsigns:
         return FlightPositionList(requested=len(pairs), matched=0)
 
+    # IATA flight numbers (for FR24's flight-summary lookup, which covers cargo).
+    flight_numbers = sorted({f for _, f in pairs if f})
+
     try:
-        aircraft = await _fetch_aircraft(callsigns)
+        aircraft = await _fetch_aircraft(callsigns, flight_numbers)
     except Exception as e:  # network/upstream error -> empty, never break the map
         logger.warning(f"flight fetch failed: {type(e).__name__}: {e}")
         return FlightPositionList(requested=len(pairs), matched=0)
@@ -479,6 +484,7 @@ async def get_flights(
             aircraft_desc=(ac.get("desc") or "").strip() or None,
             on_ground=(alt_raw == "ground"),
             seen_pos=_to_float(ac.get("seen_pos")),
+            trail=ac.get("trail") or [],  # FR24 provides the real flown path
         )
         # Emit one position per distinct AWB riding this aircraft, enriching each
         # with route geometry + timing derived from THAT shipment's metadata.
@@ -560,10 +566,11 @@ async def serve_spa(request: Request, full_path: str):
 
 
 def run_server():
-    """Run the API server (for use as console script)."""
+    """Run the API server (console script / local dev). Honors $PORT if set."""
     import uvicorn
 
-    uvicorn.run("api.main:app", host="0.0.0.0", port=8000, reload=True)
+    port = int(os.environ.get("PORT", "8000"))
+    uvicorn.run("api.main:app", host="0.0.0.0", port=port, reload=True)
 
 
 if __name__ == "__main__":
