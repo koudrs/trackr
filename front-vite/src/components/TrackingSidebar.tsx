@@ -265,7 +265,11 @@ export function TrackingSidebar({
     ? "translate-x-0 opacity-100"
     : "-translate-x-full opacity-0 lg:opacity-100";
 
-  // Split AWBs into two groups: En Vuelo (DEP) and Aterrizó (ARR)
+  // Statuses that mean the cargo has reached its destination station.
+  // RCF = received from flight, NFD = ready for pickup, DLV = delivered, ARR = arrived.
+  const ARRIVED_STATUSES = ["ARR", "RCF", "NFD", "DLV"];
+
+  // Split AWBs: Departed (in the air) and Arrived (reached destination).
   const enVueloAWBs = filteredAWBs.filter((t) => {
     const status = t.data?.events[0]?.status_code;
     return status === "DEP" || isRecentDeparture(t);
@@ -273,12 +277,14 @@ export function TrackingSidebar({
 
   const aterrizoAWBs = filteredAWBs.filter((t) => {
     const status = t.data?.events[0]?.status_code;
-    return status === "ARR";
+    return !!status && ARRIVED_STATUSES.includes(status) && !isRecentDeparture(t);
   });
 
   const otherAWBs = filteredAWBs.filter((t) => {
     const status = t.data?.events[0]?.status_code;
-    return !["DEP", "ARR"].includes(status || "") && !isRecentDeparture(t);
+    return status !== "DEP"
+      && !(status && ARRIVED_STATUSES.includes(status))
+      && !isRecentDeparture(t);
   });
 
   if (trackedAWBs.length === 0) {
@@ -390,12 +396,14 @@ export function TrackingSidebar({
               >
                 <RefreshCw className={`h-2.5 w-2.5 ${tracked.isLoading ? "animate-spin" : ""}`} />
               </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); onRemove(tracked.awb); }}
-                className="p-0.5 rounded hover:bg-red-500/20 text-[var(--muted-foreground)] hover:text-red-500"
-              >
-                <X className="h-2.5 w-2.5" />
-              </button>
+              {!tracked.isSystem && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onRemove(tracked.awb); }}
+                  className="p-0.5 rounded hover:bg-red-500/20 text-[var(--muted-foreground)] hover:text-red-500"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              )}
             </div>
           </div>
 

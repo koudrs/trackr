@@ -2,11 +2,11 @@ import { useEffect, useRef, useState, useCallback, useMemo, type ReactNode } fro
 import { LngLatBounds } from "maplibre-gl";
 import { Map, MapMarker, MarkerContent, MarkerTooltip, MapRoute, useMap } from "./ui/map";
 import type { MapRef } from "./ui/map";
-import { Radio, Plane, RefreshCw, Crosshair, Gauge, ArrowUp, X, Search, Trash2, Clock, Navigation, Globe2, Plus, Minus, Compass, Map as Map2, Clapperboard, Sun, Moon, PanelLeftOpen, PanelLeftClose, Maximize, Minimize } from "lucide-react";
+import { Radio, Plane, RefreshCw, Crosshair, Gauge, ArrowUp, X, Search, Trash2, Clock, Navigation, Globe2, Plus, Minus, Compass, Map as Map2, Clapperboard, Sun, Moon, PanelLeftOpen, PanelLeftClose, Maximize, Minimize, Play } from "lucide-react";
 import { RadarInfoBar } from "./RadarInfoBar";
 import type { TrackedAWB } from "../hooks/useTrackedAWBs";
 import { useLiveFlights, pairFromShipment, flightKey, type LiveFlight } from "../hooks/useLiveFlights";
-import { trackAWB, getAirports, getFlightTrack } from "../lib/api";
+import { getAirports, getFlightTrack, type TrackingResult } from "../lib/api";
 import { analyzeJourney, type JourneyState } from "../lib/journey";
 
 // Panama (Tocumen) is the hub: the platform's center of gravity. The map opens
@@ -35,6 +35,11 @@ function boundsForFlights(flights: LiveFlight[], anchorPanama = true): LngLatBou
   return bounds;
 }
 
+interface AirportGroup {
+  code: string;
+  items: { awb: string; journey: JourneyState }[];
+}
+
 interface LiveRadarViewProps {
   trackedAWBs: TrackedAWB[];
   selectedAWB: string | null;
@@ -42,7 +47,7 @@ interface LiveRadarViewProps {
   onClose: () => void; // back to Shipments (full-screen radar)
   darkMode: boolean;
   onToggleTheme: () => void;
-  onAddAWB: (awb: string) => Promise<unknown>; // shared add (same list as normal view)
+  onAddAWB: (awb: string) => Promise<TrackingResult | null>; // shared add (same list as normal view); returns scraped data
   onRemoveAWB: (awb: string) => void;          // shared remove
 }
 
@@ -129,20 +134,38 @@ function Stat({ icon, label, value, sub }: {
 }
 
 /** Cinematic detail panel for the focused aircraft: cargo + live flight data. */
-function FlightDetail({ f, onClose }: { f: LiveFlight; onClose: () => void }) {
+function FlightDetail({ f, onClose, onPlay, playing, onGoTo }: {
+  f: LiveFlight; onClose: () => void; onPlay: () => void; playing: boolean;
+  onGoTo: (code: string) => void;
+}) {
   const pct = f.distance_flown_pct ?? 0;
+  // A replay is possible only when a real track exists (or can be fetched).
+  const canPlay = !!f.fr24_id || (f.trail?.length ?? 0) >= 2;
   return (
     <div className="radar-panel-in relative px-4 py-3 border-b border-[var(--border)] bg-gradient-to-b from-[var(--muted)]/30 to-transparent">
-      {/* deselect / back to overview */}
-      <button
-        onClick={onClose}
-        title="Deselect — show all flights"
-        className="radar-tool absolute top-2 right-2 p-1 rounded-md text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)]"
-      >
-        <X className="w-4 h-4" />
-      </button>
+      {/* actions: replay + deselect */}
+      <div className="absolute top-2 right-2 flex items-center gap-1">
+        {canPlay && (
+          <button
+            onClick={onPlay}
+            title={playing ? "Replaying route…" : "Replay this flight's route"}
+            className={`radar-tool flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold ${
+              playing ? "bg-amber-500 text-white" : "bg-[var(--muted)] text-[var(--foreground)] hover:bg-amber-500 hover:text-white"
+            }`}
+          >
+            <Play className="w-3 h-3" /> {playing ? "Playing" : "Replay"}
+          </button>
+        )}
+        <button
+          onClick={onClose}
+          title="Deselect — show all flights"
+          className="radar-tool p-1 rounded-md text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)]"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
       {/* flight + route headline */}
-      <div className="flex items-start justify-between gap-2 pr-6">
+      <div className="flex items-start justify-between gap-2 pr-24">
         <div>
           <div className="text-xl font-extrabold tracking-tight text-[var(--foreground)] leading-none">
             {f.flight || f.callsign}
@@ -155,9 +178,21 @@ function FlightDetail({ f, onClose }: { f: LiveFlight; onClose: () => void }) {
         </div>
         {f.origin && f.destination && (
           <div className="flex items-center gap-1.5 shrink-0">
-            <span className="text-lg font-bold text-[var(--foreground)]">{f.origin}</span>
+            <button
+              onClick={() => onGoTo(f.origin!)}
+              title={`Jump to origin (${f.origin})`}
+              className="radar-tool text-lg font-bold text-[var(--foreground)] hover:text-amber-400 underline decoration-dotted decoration-[var(--muted-foreground)] underline-offset-4"
+            >
+              {f.origin}
+            </button>
             <Plane className="w-3.5 h-3.5 text-amber-400 -rotate-45" />
-            <span className="text-lg font-bold text-[var(--foreground)]">{f.destination}</span>
+            <button
+              onClick={() => onGoTo(f.destination!)}
+              title={`Jump to destination (${f.destination})`}
+              className="radar-tool text-lg font-bold text-[var(--foreground)] hover:text-amber-400 underline decoration-dotted decoration-[var(--muted-foreground)] underline-offset-4"
+            >
+              {f.destination}
+            </button>
           </div>
         )}
       </div>
@@ -240,30 +275,55 @@ function PlaneIcon({ selected, grounded, dark }: { selected: boolean; grounded: 
 }
 
 /** The Panama hub marker — the platform's center of attention. */
+// NOTE on anchoring: MapLibre markers anchor at the CENTER of their element. So
+// each pin keeps its ICON as a centered box (anchored exactly on the lat/lng) and
+// renders its text label ABSOLUTELY positioned below — the label doesn't shift
+// the element's center, so the icon stays glued to the geographic point.
 function HubPin() {
   return (
-    <div className="relative flex flex-col items-center" title="Panama Hub (PTY)">
+    <div className="relative" title="Panama Hub (PTY)">
       <span className="radar-halo" style={{ borderColor: "rgba(56,189,248,0.6)" }} />
       <div className="relative w-8 h-8 rounded-full bg-gradient-to-br from-zinc-600 to-zinc-800 border-2 border-white flex items-center justify-center shadow-lg shadow-amber-500/40">
         <Navigation className="w-4 h-4 text-white" />
       </div>
-      <span className="mt-1 px-1.5 py-0.5 rounded bg-amber-500 text-white text-[10px] font-extrabold tracking-wide shadow">
+      <span className="absolute left-1/2 top-full -translate-x-1/2 mt-1 px-1.5 py-0.5 rounded bg-amber-500 text-white text-[10px] font-extrabold tracking-wide shadow whitespace-nowrap">
         PTY
       </span>
     </div>
   );
 }
 
-/** Pin for cargo at an airport: "waiting" for a connection (amber) or "awaiting"
-    its first departure at the origin (slate). */
-function AirportPin({ code, variant = "waiting" }: { code: string; variant?: "waiting" | "awaiting" }) {
-  const color = variant === "awaiting" ? "bg-zinc-500" : "bg-amber-500";
+/** Pin for cargo at an airport. Shows a count badge when several shipments are
+    grouped there (e.g. the Panama hub), so markers don't overlap. */
+function AirportPin({ code, variant = "waiting", count = 1 }: {
+  code: string; variant?: "waiting" | "awaiting" | "delivered"; count?: number;
+}) {
+  const color = variant === "delivered" ? "bg-emerald-500"
+    : variant === "awaiting" ? "bg-zinc-500"
+    : "bg-amber-500";
+  const size = count > 1 ? "w-9 h-9" : "w-7 h-7";
   return (
-    <div className="flex flex-col items-center" title={`Cargo at ${code}`}>
-      <div className={`w-7 h-7 rounded-lg ${color} border-2 border-white shadow-md flex items-center justify-center`}>
-        <Plane className="w-3.5 h-3.5 text-white" />
+    <div className="relative" title={`${count} cargo at ${code}`}>
+      <div className={`${size} rounded-xl ${color} border-2 border-white shadow-md flex items-center justify-center transition-all`}>
+        {count > 1
+          ? <span className="text-white text-xs font-extrabold tabular-nums">{count}</span>
+          : <Plane className="w-3.5 h-3.5 text-white" />}
       </div>
-      <span className={`mt-0.5 px-1 rounded ${color} text-white text-[9px] font-bold shadow`}>{code}</span>
+      <span className={`absolute left-1/2 top-full -translate-x-1/2 mt-0.5 px-1 rounded ${color} text-white text-[9px] font-bold shadow whitespace-nowrap`}>{code}</span>
+    </div>
+  );
+}
+
+/** Marker for a departure (origin) airport — a bright ringed dot, clearly
+    visible on the dark map and distinct from the colored cargo pins. */
+function OriginDot({ code }: { code: string }) {
+  return (
+    <div className="relative" title={`Origin: ${code}`}>
+      {/* soft halo + solid white core with a sky ring */}
+      <div className="w-4 h-4 rounded-full bg-sky-400/25 flex items-center justify-center">
+        <div className="w-2.5 h-2.5 rounded-full bg-white ring-2 ring-sky-400 shadow-[0_0_6px_rgba(56,189,248,0.8)]" />
+      </div>
+      <span className="absolute left-1/2 top-full -translate-x-1/2 mt-0.5 px-1 rounded bg-black/60 text-sky-200 text-[8px] font-bold tracking-wide whitespace-nowrap">{code}</span>
     </div>
   );
 }
@@ -272,11 +332,11 @@ function AirportPin({ code, variant = "waiting" }: { code: string; variant?: "wa
     signal — an ESTIMATED position (dashed, muted, clearly "not confirmed"). */
 function EstimatedPin() {
   return (
-    <div className="flex flex-col items-center" title="Estimated position — no live signal">
+    <div className="relative" title="Estimated position — no live signal">
       <div className="w-7 h-7 rounded-full border-2 border-dashed border-zinc-400 bg-zinc-500/30 flex items-center justify-center backdrop-blur-sm">
         <Plane className="w-3.5 h-3.5 text-zinc-200" />
       </div>
-      <span className="mt-0.5 px-1 rounded bg-zinc-600/80 text-white text-[8px] font-semibold shadow">~est</span>
+      <span className="absolute left-1/2 top-full -translate-x-1/2 mt-0.5 px-1 rounded bg-zinc-600/80 text-white text-[8px] font-semibold shadow whitespace-nowrap">~est</span>
     </div>
   );
 }
@@ -433,6 +493,41 @@ export function LiveRadarView({ trackedAWBs, selectedAWB, onSelect, onClose, dar
     [journeys]
   );
 
+  // Delivered / ready at destination → completed (green pin at destination).
+  const delivered = useMemo(
+    () => journeys.filter((j) => j.journey.phase === "delivered" && j.journey.at),
+    [journeys]
+  );
+
+  // Group all airport-pinned cargo (waiting + awaiting + delivered) by airport,
+  // so a hub like PTY shows ONE pin with a count instead of N overlapping markers.
+  const airportGroups = useMemo<AirportGroup[]>(() => {
+    // NOTE: `Map` is shadowed by the mapcn import above, so use a plain object.
+    const groups: Record<string, AirportGroup> = {};
+    for (const j of [...waiting, ...awaiting, ...delivered]) {
+      const code = j.journey.at as string;
+      if (!groups[code]) groups[code] = { code, items: [] };
+      groups[code].items.push(j);
+    }
+    return Object.values(groups);
+  }, [waiting, awaiting, delivered]);
+
+  // Origin airports of shipments that have already LEFT origin (in flight,
+  // at a later stop, or delivered) — a small dot marks where each one started.
+  // Skipped when the origin is also the current pin (awaiting) to avoid dupes.
+  const originDots = useMemo(() => {
+    const pinnedHere = new Set([...waiting, ...awaiting, ...delivered].map((j) => j.journey.at));
+    const codes: Record<string, number> = {};
+    for (const { journey } of journeys) {
+      const o = journey.from || journey.legs[0]?.from;
+      // Only mark the origin once it's no longer where the cargo currently sits.
+      if (o && journey.phase !== "awaiting_departure" && !(pinnedHere.has(o) && journey.at === o)) {
+        codes[o] = (codes[o] || 0) + 1;
+      }
+    }
+    return Object.entries(codes).map(([code, count]) => ({ code, count }));
+  }, [journeys, waiting, awaiting, delivered]);
+
   // Shipments that ARE in flight per the tracker but have NO live position
   // (FR24/airplanes.live didn't locate them) — we'll estimate their spot.
   const noSignal = useMemo(() => {
@@ -460,41 +555,43 @@ export function LiveRadarView({ trackedAWBs, selectedAWB, onSelect, onClose, dar
     );
   }, [journeys, airports]);
 
-  // Add an AWB from the radar — goes to the SHARED list (same as the normal
-  // view) via onAddAWB, so it shows up in both places and persists on reload.
-  const handleAdd = useCallback(async () => {
-    const raw = query.trim().toUpperCase();
-    const m = AWB_RE.exec(raw);
-    if (!m) {
-      setAddError("Format: XXX-XXXXXXXX");
-      return;
-    }
-    const awb = `${m[1]}-${m[2]}`;
+  // Add a normalized AWB to the SHARED list (same as the normal view) via
+  // onAddAWB → shows in both views + persists. onAddAWB performs the (FREE)
+  // scrape and returns the data, so we validate on THAT result instead of
+  // scraping a second time. If the shipment isn't usable, we roll the add back
+  // with onRemoveAWB. FR24 is only hit later, and only for shipments in flight.
+  const addAwbByCode = useCallback(async (awb: string) => {
     setAdding(true);
     setAddError(null);
     try {
-      const data = await trackAWB(awb);
-      if (!data.events?.length) {
+      const data = await onAddAWB(awb);
+      if (!data?.events?.length) {
         setAddError("No tracking events for this AWB yet");
+        onRemoveAWB(awb);
         return;
       }
       const j = analyzeJourney(data);
-      // Helpful status note (informational, not an error). With FR24 we can draw
-      // the real flown route even for delivered shipments.
       if (j.phase === "at_airport" && j.nextFlight) {
+        // Valid shipment, just waiting at a stop — keep it; show an info note.
         setAddError(`At ${j.at}, waiting for ${j.nextFlight} → ${j.nextTo}`);
       } else if (!pairFromShipment(awb, data)) {
         setAddError("No flight number on this AWB yet");
+        onRemoveAWB(awb);
         return;
       }
-      await onAddAWB(awb); // shared add → normal view + radar, persisted
       setQuery("");
     } catch (err) {
       setAddError(err instanceof Error ? err.message : "Tracking error");
     } finally {
       setAdding(false);
     }
-  }, [query, onAddAWB]);
+  }, [onAddAWB, onRemoveAWB]);
+
+  const handleAdd = useCallback(() => {
+    const m = AWB_RE.exec(query.trim().toUpperCase());
+    if (!m) { setAddError("Format: XXX-XXXXXXXX"); return; }
+    addAwbByCode(`${m[1]}-${m[2]}`);
+  }, [query, addAwbByCode]);
 
   const removeActive = (awb: string) => onRemoveAWB(awb);
 
@@ -520,6 +617,7 @@ export function LiveRadarView({ trackedAWBs, selectedAWB, onSelect, onClose, dar
   const showAll = () => {
     setFocusKey(null);
     setCinema(false);
+    stopPlayback();
     const bounds = boundsForFlights(flights);
     if (mapRef.current && bounds) {
       mapRef.current.fitBounds(bounds, { padding: 110, minZoom: 1.8, maxZoom: 6,
@@ -530,54 +628,98 @@ export function LiveRadarView({ trackedAWBs, selectedAWB, onSelect, onClose, dar
   };
   const fitAll = showAll; // alias kept for existing calls
 
-  // Cinema mode:
-  //  - If a flight is SELECTED: cinematic follow — keep that aircraft framed as
-  //    it moves (works for demo or real flights), with a tilted globe view.
-  //  - If nothing is selected: gentle auto-tour across all flights as a fallback.
-  useEffect(() => {
-    if (!cinema) return;
-    const m = mapRef.current;
-    if (!m) return;
+  // ── Flight playback ───────────────────────────────────────────────────────
+  // Replay a flight's real flown track (FR24) in ~12s: a plane glides along the
+  // path, the camera follows, and the trail draws in behind it. Only available
+  // when a real track exists — we never fabricate a route.
+  const PLAYBACK_MS = 12000;
+  const [playback, setPlayback] = useState<{ key: string; track: [number, number][]; progress: number } | null>(null);
+  const playRafRef = useRef<number | null>(null);
 
-    // FOLLOW a specific selected flight.
-    if (focusKey) {
-      const follow = () => {
-        const mm = mapRef.current;
-        const f = flights.find((x) => flightKey(x) === focusKey);
-        if (!mm || !f) return;
-        mm.easeTo({
-          center: [f.displayLng, f.displayLat],
-          zoom: Math.max(mm.getZoom(), 4.2),
-          pitch: globe ? 50 : 0,
-          duration: 1800,
-          essential: true,
-        });
-      };
-      follow();
-      const id = window.setInterval(follow, 2000); // track its movement
-      return () => clearInterval(id);
+  const stopPlayback = useCallback(() => {
+    if (playRafRef.current) cancelAnimationFrame(playRafRef.current);
+    playRafRef.current = null;
+    setPlayback(null);
+  }, []);
+
+  const playTrack = useCallback((key: string, track: [number, number][]) => {
+    if (track.length < 2) return;
+    if (playRafRef.current) cancelAnimationFrame(playRafRef.current);
+    setFocusKey(key);
+    setCinema(false);
+    const start = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / PLAYBACK_MS);
+      const idx = Math.min(track.length - 1, Math.floor(t * (track.length - 1)));
+      const pos = track[idx];
+      setPlayback({ key, track, progress: t });
+      mapRef.current?.easeTo({
+        center: pos, zoom: Math.max(mapRef.current.getZoom(), 4.5),
+        pitch: globe ? 50 : 0, duration: 120, essential: true,
+      });
+      if (t < 1) playRafRef.current = requestAnimationFrame(tick);
+      else playRafRef.current = null;
+    };
+    playRafRef.current = requestAnimationFrame(tick);
+  }, [globe]);
+
+  // Resolve a flight's track (cached realTracks → live trail → FR24 on demand),
+  // then play it. Does nothing if no real track is available.
+  const playFlight = useCallback(async (f: LiveFlight) => {
+    let track: [number, number][] | undefined =
+      (f.fr24_id && realTracks[f.fr24_id]) ||
+      (f.trail && f.trail.length >= 2 ? (f.trail as [number, number][]) : undefined);
+    if (!track && f.fr24_id) {
+      track = await getFlightTrack(f.fr24_id);
+      if (track && track.length >= 2) {
+        setRealTracks((prev) => ({ ...prev, [f.fr24_id!]: track! }));
+      }
     }
+    if (track && track.length >= 2) playTrack(flightKey(f), unwrapLng(track));
+  }, [realTracks, playTrack]);
 
-    // No selection -> auto-tour all flights, with a Panama beauty shot each lap.
+  useEffect(() => () => { if (playRafRef.current) cancelAnimationFrame(playRafRef.current); }, []);
+
+  // Live data read by the cinema loop via a ref, so the effect does NOT depend on
+  // flights/waiting/awaiting (which change every poll) — otherwise cinema would
+  // tear down and restart on every refresh, feeling broken.
+  const cinemaDataRef = useRef({ flights, waiting, awaiting, airports });
+  cinemaDataRef.current = { flights, waiting, awaiting, airports };
+
+  // Cinema = a hands-off AUTO-TOUR (presentation mode for the TV): it cycles
+  // through every shipment (live flights + airport pins) and ends each lap on a
+  // Panama beauty shot. It ignores any selection — to study one flight, turn
+  // Cinema off and click it. Stable deps so polling never restarts the tour.
+  useEffect(() => {
+    if (!cinema || !mapRef.current) return;
+    cinemaIdxRef.current = 0;
     const step = () => {
       const mm = mapRef.current;
-      if (!mm || flights.length === 0) return;
-      const i = cinemaIdxRef.current % (flights.length + 1);
+      if (!mm) return;
+      const { flights: fl, waiting: wt, awaiting: aw, airports: ap } = cinemaDataRef.current;
+      const stops: [number, number][] = [
+        ...fl.map((f) => [f.displayLng, f.displayLat] as [number, number]),
+        ...[...wt, ...aw]
+          .map((j) => (j.journey.at ? ap[j.journey.at] : undefined))
+          .filter((c): c is [number, number] => !!c)
+          .map((c) => [c[1], c[0]] as [number, number]),
+      ];
+      if (stops.length === 0) return;
+      const i = cinemaIdxRef.current % (stops.length + 1);
       cinemaIdxRef.current = i + 1;
-      if (i === flights.length) {
-        const b = boundsForFlights(flights);
-        if (b) mm.fitBounds(b, { padding: 120, minZoom: 1.8, maxZoom: 5, duration: 2500, pitch: globe ? 35 : 0 });
+      if (i === stops.length) {
+        const b = boundsForFlights(fl) ?? new LngLatBounds();
+        b.extend(PANAMA);
+        stops.forEach((s) => b.extend(s));
+        mm.fitBounds(b, { padding: 120, minZoom: 1.8, maxZoom: 5, duration: 2500, pitch: globe ? 35 : 0 });
       } else {
-        const f = flights[i];
-        mm.flyTo({ center: [f.displayLng, f.displayLat], zoom: 4.5,
-          pitch: globe ? 45 : 0, duration: 2500, essential: true });
+        mm.flyTo({ center: stops[i], zoom: 4.5, pitch: globe ? 45 : 0, duration: 2500, essential: true });
       }
     };
     step();
     const id = window.setInterval(step, 7000);
     return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cinema, focusKey, flights.length, globe]);
+  }, [cinema, globe]);
 
   const zoomBy = (delta: number) => {
     const m = mapRef.current;
@@ -663,55 +805,55 @@ export function LiveRadarView({ trackedAWBs, selectedAWB, onSelect, onClose, dar
           );
         })}
 
-        {/* Cargo waiting at an intermediate airport (e.g. in IST for the PTY leg) */}
-        {waiting.map(({ awb, journey }) => {
-          const coord = journey.at ? airports[journey.at] : undefined;
+        {/* Cargo at airports, GROUPED by airport so a hub (PTY) shows one pin
+            with a count instead of N overlapping markers. Click = zoom + select. */}
+        {airportGroups.map((g) => {
+          const coord = airports[g.code];
           if (!coord) return null;
+          const n = g.items.length;
+          // Pin color by group makeup: all-delivered = green (done), any waiting
+          // for a connection = amber, else (only awaiting-departure) = neutral.
+          const allDelivered = g.items.every((it) => it.journey.phase === "delivered");
+          const anyWaiting = g.items.some((it) => it.journey.phase === "at_airport");
+          const variant: "waiting" | "awaiting" | "delivered" =
+            allDelivered ? "delivered" : anyWaiting ? "waiting" : "awaiting";
+          const first = g.items[0];
           return (
             <MapMarker
-              key={`wait-${awb}`}
+              key={`grp-${g.code}`}
               longitude={coord[1]}
               latitude={coord[0]}
-              onClick={() => { setFocusKey(awb); onSelect(awb); }}
+              onClick={() => {
+                if (n === 1) { setFocusKey(first.awb); onSelect(first.awb); }
+                mapRef.current?.flyTo({ center: [coord[1], coord[0]], zoom: 5, duration: 900 });
+              }}
             >
               <MarkerContent>
-                <AirportPin code={journey.at!} />
+                <AirportPin code={g.code} count={n} variant={variant} />
               </MarkerContent>
               <MarkerTooltip>
                 <div className="text-xs">
-                  <div className="font-semibold">At {journey.at}</div>
-                  {journey.nextFlight && (
-                    <div className="text-[10px]">waiting {journey.nextFlight} → {journey.nextTo}</div>
-                  )}
-                  <div className="font-mono text-[10px]">{awb}</div>
+                  <div className="font-semibold">{g.code} · {n} shipment{n > 1 ? "s" : ""}</div>
+                  {g.items.slice(0, 6).map((it) => (
+                    <div key={it.awb} className="font-mono text-[10px] text-[var(--muted-foreground)]">{it.awb}</div>
+                  ))}
+                  {n > 6 && <div className="text-[10px]">+{n - 6} more</div>}
                 </div>
               </MarkerTooltip>
             </MapMarker>
           );
         })}
 
-        {/* Cargo accepted at origin but not departed yet → awaiting its flight */}
-        {awaiting.map(({ awb, journey }) => {
-          const coord = journey.at ? airports[journey.at] : undefined;
+        {/* Origin dots: a small marker at each departure airport that has shipments
+            already en route / arrived, so you can see where cargo started from. */}
+        {originDots.map(({ code, count }) => {
+          const coord = airports[code];
           if (!coord) return null;
           return (
-            <MapMarker
-              key={`await-${awb}`}
-              longitude={coord[1]}
-              latitude={coord[0]}
-              onClick={() => { setFocusKey(awb); onSelect(awb); }}
-            >
-              <MarkerContent>
-                <AirportPin code={journey.at!} variant="awaiting" />
-              </MarkerContent>
+            <MapMarker key={`orig-${code}`} longitude={coord[1]} latitude={coord[0]}>
+              <MarkerContent><OriginDot code={code} /></MarkerContent>
               <MarkerTooltip>
-                <div className="text-xs">
-                  <div className="font-semibold">At {journey.at} · awaiting departure</div>
-                  {journey.nextFlight && (
-                    <div className="text-[10px]">{journey.nextFlight} → {journey.nextTo}</div>
-                  )}
-                  <div className="font-mono text-[10px]">{awb}</div>
-                </div>
+                <div className="text-xs font-semibold">{code} · origin ({count})</div>
               </MarkerTooltip>
             </MapMarker>
           );
@@ -764,10 +906,32 @@ export function LiveRadarView({ trackedAWBs, selectedAWB, onSelect, onClose, dar
           );
         })}
 
+        {/* PLAYBACK overlay: the track draws in progressively + an animated plane
+            rides the leading edge, camera follows. Replaces the static trail while
+            a replay is running. */}
+        {playback && playback.track.length >= 2 && (() => {
+          const n = playback.track.length;
+          const upto = Math.max(2, Math.floor(playback.progress * (n - 1)) + 1);
+          const drawn = playback.track.slice(0, upto);
+          const head = drawn[drawn.length - 1];
+          const prev = drawn[drawn.length - 2] ?? head;
+          const heading = (Math.atan2(head[0] - prev[0], head[1] - prev[1]) * 180) / Math.PI;
+          return (
+            <>
+              <MapRoute coordinates={drawn} color="#fbbf24" width={11} opacity={0.18} interactive={false} />
+              <MapRoute coordinates={drawn} color="#fbbf24" width={5} opacity={0.4} interactive={false} />
+              <MapRoute coordinates={drawn} color="#fde68a" width={2} opacity={0.95} interactive={false} />
+              <MapMarker longitude={head[0]} latitude={head[1]} rotation={heading} rotationAlignment="map">
+                <MarkerContent><PlaneIcon selected grounded={false} dark={darkMode} /></MarkerContent>
+              </MapMarker>
+            </>
+          );
+        })()}
+
         {/* Real flown path of the focused aircraft. Prefer the real FR24/demo
             track, fall back to the live-accumulated breadcrumb.
             Both are unwrapped so antimeridian crossings draw the short way. */}
-        {(() => {
+        {!playback && (() => {
           const focused = focusKey ? flights.find((x) => flightKey(x) === focusKey) : null;
           // Priority: the per-position trail FIRST — it arrives FRESH on every
           // poll (FR24 sends the full path each time), so it stays in sync with
@@ -827,13 +991,7 @@ export function LiveRadarView({ trackedAWBs, selectedAWB, onSelect, onClose, dar
       <div className="radar-in-up radar-hud absolute bottom-5 left-1/2 -translate-x-1/2 z-[450] flex items-center gap-1 rounded-2xl px-2 py-1.5">
         <ToolButton icon={<Minus className="w-4 h-4" />} onClick={() => zoomBy(-1)} title="Zoom out" />
         <ToolButton icon={<Plus className="w-4 h-4" />} onClick={() => zoomBy(1)} title="Zoom in" />
-        <ToolButton
-          icon={<Globe2 className="w-4 h-4" />}
-          label="Show all"
-          active={!!focusKey}
-          onClick={showAll}
-          title="Deselect and show all flights (overview)"
-        />
+        <ToolButton icon={<Crosshair className="w-4 h-4" />} label="Fit" onClick={showAll} title="Fit all shipments in view" />
         <ToolButton icon={<Compass className="w-4 h-4" />} onClick={resetNorth} title="Reset north / level view" />
 
         <div className="w-px h-6 bg-[var(--border)] mx-1" />
@@ -850,9 +1008,7 @@ export function LiveRadarView({ trackedAWBs, selectedAWB, onSelect, onClose, dar
           label="Cinema"
           active={cinema}
           onClick={() => setCinema((c) => !c)}
-          title={focusKey
-            ? "Cinema: follow the selected flight"
-            : "Cinema: select a flight to follow it, or auto-tour all"}
+          title="Cinema: auto-tour all shipments (presentation mode)"
         />
 
         <div className="w-px h-6 bg-[var(--border)] mx-1" />
@@ -973,10 +1129,50 @@ export function LiveRadarView({ trackedAWBs, selectedAWB, onSelect, onClose, dar
           )}
         </div>
 
-        {/* Focused flight detail (combined cargo + live data) */}
+        {/* Focused shipment detail. Works for BOTH live flights (FR24 position)
+            AND shipments shown only as airport pins — for the latter we build a
+            light LiveFlight from the tracked data so the panel (route, jump-to-
+            origin, replay) still shows. */}
         {(() => {
-          const focused = focusKey ? flights.find((x) => flightKey(x) === focusKey) : null;
-          return focused ? <FlightDetail f={focused} onClose={showAll} /> : null;
+          if (!focusKey) return null;
+          // 1) A live flight with a real position.
+          let focused: LiveFlight | undefined = flights.find((x) => flightKey(x) === focusKey);
+          // 2) Otherwise an airport-pinned shipment (focusKey === awb).
+          if (!focused) {
+            const t = trackedAWBs.find((x) => x.awb === focusKey);
+            const j = t?.data ? analyzeJourney(t.data) : null;
+            if (t && j) {
+              const pair = pairFromShipment(t.awb, t.data);
+              const here = j.at ? airports[j.at] : undefined;
+              focused = {
+                callsign: pair?.flight ?? t.awb,
+                flight: pair?.flight ?? null,
+                awb: t.awb,
+                fr24_id: null, hex: null, registration: null,
+                aircraft_type: null, aircraft_desc: null,
+                lat: here ? here[0] : 0, lng: here ? here[1] : 0,
+                displayLat: here ? here[0] : 0, displayLng: here ? here[1] : 0,
+                track: null, ground_speed: null, altitude: null, vertical_rate: null,
+                on_ground: true, seen_pos: null,
+                origin: j.from ?? t.data?.origin ?? null,
+                destination: j.to ?? t.data?.destination ?? null,
+                distance_remaining_nm: null, distance_flown_pct: null,
+                eta_minutes: null, flight_minutes: null, trail: [],
+              };
+            }
+          }
+          return focused ? (
+            <FlightDetail
+              f={focused}
+              onClose={showAll}
+              onPlay={() => playFlight(focused!)}
+              playing={!!playback && playback.key === flightKey(focused!)}
+              onGoTo={(code) => {
+                const c = airports[code];
+                if (c) mapRef.current?.flyTo({ center: [c[1], c[0]], zoom: 5, duration: 1200, essential: true });
+              }}
+            />
+          ) : null;
         })()}
 
         {/* Flight list */}
@@ -1037,7 +1233,16 @@ export function LiveRadarView({ trackedAWBs, selectedAWB, onSelect, onClose, dar
                 return (
                   <li key={p.awb} className="group relative">
                     <button
-                      onClick={() => (f ? flyTo(f) : onSelect(p.awb))}
+                      onClick={() => {
+                        if (f) { flyTo(f); return; }
+                        // No live position → focus it anyway (opens the detail
+                        // panel) and fly to where it currently sits, if known.
+                        setFocusKey(p.awb);
+                        onSelect(p.awb);
+                        const jr = journeys.find((x) => x.awb === p.awb)?.journey;
+                        const c = jr?.at ? airports[jr.at] : null;
+                        if (c) mapRef.current?.flyTo({ center: [c[1], c[0]], zoom: 5, duration: 1000 });
+                      }}
                       className={`w-full text-left px-4 py-2.5 transition-colors ${
                         selected ? "bg-[var(--accent)]" : "hover:bg-[var(--muted)]"
                       }`}
@@ -1080,15 +1285,26 @@ export function LiveRadarView({ trackedAWBs, selectedAWB, onSelect, onClose, dar
                         </div>
                       )}
                     </button>
-                    {isActive && (
-                      <button
-                        onClick={() => removeActive(p.awb)}
-                        title="Remove from radar"
-                        className="absolute right-2 top-2 p-1 rounded text-[var(--muted-foreground)] opacity-0 group-hover:opacity-100 hover:text-red-500 transition-opacity"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
+                    <div className="absolute right-2 top-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {f && (!!f.fr24_id || (f.trail?.length ?? 0) >= 2) && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); playFlight(f); }}
+                          title="Replay this flight's route"
+                          className="p-1 rounded text-[var(--muted-foreground)] hover:text-amber-500"
+                        >
+                          <Play className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {isActive && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); removeActive(p.awb); }}
+                          title="Remove from radar"
+                          className="p-1 rounded text-[var(--muted-foreground)] hover:text-red-500"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </li>
                 );
               })}

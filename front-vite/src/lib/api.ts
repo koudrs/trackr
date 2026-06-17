@@ -101,6 +101,14 @@ export interface FlightQuery {
   depTime?: string | null; // ISO timestamp of the DEP event
 }
 
+/** List available AWBs to track (Seal Cargo, via our proxy). Free — never FR24. */
+export async function getGuiasList(): Promise<string[]> {
+  const res = await fetch(`${API_BASE}/guias-list`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return Array.isArray(data.awbs) ? data.awbs : [];
+}
+
 /** Fetch coordinates for IATA airport codes: { IST: [lat, lng], ... }. */
 export async function getAirports(codes: string[]): Promise<Record<string, [number, number]>> {
   const uniq = [...new Set(codes.filter(Boolean))];

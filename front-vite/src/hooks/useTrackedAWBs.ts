@@ -15,6 +15,7 @@ export interface TrackedAWB {
   // Connection/transshipment tracking
   connectionAWB?: string; // AWB of connecting flight (e.g., 810-XXXXX for MIA→PTY)
   parentAWB?: string; // If this is a connection, reference to parent AWB
+  isSystem?: boolean; // came from the Seal Cargo guides list (not user-added, not removable)
 }
 
 const STORAGE_KEY = "tracked_awbs";

@@ -12,6 +12,7 @@ expects from airplanes.live, so callers don't care which source produced it:
     {flight, hex, r, t, desc, lat, lon, track, gs, alt_baro, baro_rate, seen_pos}
 """
 
+import asyncio
 import logging
 import os
 import time
@@ -31,6 +32,10 @@ _SUMMARY_TTL = 600.0   # 10 min — route/fr24_id/hex barely change mid-flight
 _TRACK_TTL = 300.0     # 5 min — the costly flight-tracks; interpolation fills gaps
 _summary_cache: dict[str, tuple[float, list[dict]]] = {}
 _track_pts_cache: dict[str, tuple[float, list[dict]]] = {}
+# Per-fr24_id lock so two concurrent callers (poll vs. click, or multiple kiosk
+# viewers) don't BOTH miss the cache and each pay the ~40-credit flight-tracks
+# call for the same flight. Mirrors the _guias_lock guard on the scraping path.
+_track_locks: dict[str, asyncio.Lock] = {}
 
 
 def fr24_enabled() -> bool:
@@ -115,25 +120,41 @@ async def _flight_summaries(flight_numbers: list[str], day_iso: str) -> list[dic
 
 async def _fetch_track_points(fr24_id: str) -> list[dict]:
     """Raw track points for a flight id. THIS IS THE EXPENSIVE CALL (~40 credits),
-    so it's cached 5 min per flight — the frontend interpolates between updates."""
-    now = time.monotonic()
+    so it's cached 5 min per flight — the frontend interpolates between updates.
+
+    A per-fr24_id lock serializes concurrent misses so only ONE upstream call
+    happens per flight per TTL window even if poll + click (or several viewers)
+    race; the others await it and read the freshly-cached result for free.
+    """
     cached = _track_pts_cache.get(fr24_id)
-    if cached and (now - cached[0]) < _TRACK_TTL:
+    if cached and (time.monotonic() - cached[0]) < _TRACK_TTL:
         return cached[1]
 
-    url = f"{FR24_BASE}/flight-tracks"
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.get(url, params={"flight_id": fr24_id}, headers=_headers())
-        resp.raise_for_status()
-        body = resp.json()
-    if isinstance(body, list) and body:
-        pts = body[0].get("tracks", []) or []
-    elif isinstance(body, dict):
-        pts = body.get("tracks", []) or []
-    else:
-        pts = []
-    _track_pts_cache[fr24_id] = (now, pts)
-    return pts
+    lock = _track_locks.setdefault(fr24_id, asyncio.Lock())
+    async with lock:
+        # Double-check: a concurrent caller may have populated it while we waited.
+        cached = _track_pts_cache.get(fr24_id)
+        if cached and (time.monotonic() - cached[0]) < _TRACK_TTL:
+            return cached[1]
+
+        url = f"{FR24_BASE}/flight-tracks"
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(url, params={"flight_id": fr24_id}, headers=_headers())
+            resp.raise_for_status()
+            body = resp.json()
+        if isinstance(body, list) and body:
+            pts = body[0].get("tracks", []) or []
+        elif isinstance(body, dict):
+            pts = body.get("tracks", []) or []
+        else:
+            pts = []
+        # Only cache a NON-empty result. A flight FR24 reports as airborne but
+        # whose track hasn't populated yet returns []; caching that would hide it
+        # for the full 5-min TTL. Skipping the store lets the next poll retry it
+        # (still bounded: only confirmed-in-air flights reach this path).
+        if pts:
+            _track_pts_cache[fr24_id] = (time.monotonic(), pts)
+        return pts
 
 
 async def fetch_positions_by_flights(flight_numbers: list[str], day_iso: str) -> list[dict]:
@@ -152,27 +173,51 @@ async def fetch_positions_by_flights(flight_numbers: list[str], day_iso: str) ->
     # those windows costs zero credits.
 
     summaries = await _flight_summaries(flight_numbers, day_iso)
-    out: list[dict] = []
+
+    # DEDUP per IATA flight number before fetching tracks. The 2-day window means
+    # a daily-cadence flight can return BOTH yesterday's and today's instance,
+    # each with a distinct fr24_id. Without dedup, an ultra-long-haul still
+    # airborne from yesterday could trigger TWO ~40-credit flight-tracks calls.
+    # Prefer the single in-air instance (or the most recent by takeoff).
+    by_flight: dict[str, list[dict]] = {}
     for s in summaries:
+        if not s.get("fr24_id"):
+            continue
+        by_flight.setdefault(s.get("flight") or s["fr24_id"], []).append(s)
+    deduped: list[dict] = []
+    for rows in by_flight.values():
+        in_air = [r for r in rows if not r.get("datetime_landed")]
+        pool = in_air or rows
+        deduped.append(max(pool, key=lambda r: r.get("datetime_takeoff") or ""))
+
+    out: list[dict] = []
+    for s in deduped:
         fr24_id = s.get("fr24_id")
-        # Only flights still in the air (not yet landed).
-        if not fr24_id or s.get("datetime_landed"):
+        if not fr24_id:
             continue
-        try:
-            tracks = await _fetch_track_points(fr24_id)
-        except Exception as e:
-            logger.warning(f"FR24 track fetch failed for {fr24_id}: {e}")
-            continue
-        if not tracks:
-            continue
-        last = tracks[-1]
-        if last.get("lat") is None or last.get("lon") is None:
-            continue
-        trail = [
-            [float(p["lon"]), float(p["lat"])]
-            for p in tracks
-            if p.get("lat") is not None and p.get("lon") is not None
-        ]
+        landed = bool(s.get("datetime_landed"))
+
+        # CREDIT POLICY: only fetch the (expensive ~40-credit) flight-tracks
+        # automatically for flights still IN THE AIR. Landed flights are returned
+        # WITHOUT a trail — the frontend requests their historical track on demand
+        # (click) via /api/flight-track/{fr24_id}, which is cached.
+        trail: list[list[float]] = []
+        last: dict = {}
+        if not landed:
+            try:
+                tracks = await _fetch_track_points(fr24_id)
+            except Exception as e:
+                logger.warning(f"FR24 track fetch failed for {fr24_id}: {e}")
+                tracks = []
+            if tracks:
+                trail = [
+                    [float(p["lon"]), float(p["lat"])]
+                    for p in tracks
+                    if p.get("lat") is not None and p.get("lon") is not None
+                ]
+                if tracks[-1].get("lat") is not None and tracks[-1].get("lon") is not None:
+                    last = tracks[-1]
+
         out.append({
             "fr24_id": fr24_id,
             "flight": s.get("flight"),               # IATA flight number (TK6593)
@@ -181,8 +226,8 @@ async def fetch_positions_by_flights(flight_numbers: list[str], day_iso: str) ->
             "r": s.get("reg"),
             "t": s.get("type"),
             "desc": s.get("type"),
-            "lat": float(last["lat"]),
-            "lon": float(last["lon"]),
+            "lat": float(last["lat"]) if last.get("lat") is not None else None,
+            "lon": float(last["lon"]) if last.get("lon") is not None else None,
             "track": last.get("track"),
             "gs": last.get("gspeed"),
             "alt_baro": last.get("alt"),
@@ -190,7 +235,8 @@ async def fetch_positions_by_flights(flight_numbers: list[str], day_iso: str) ->
             "seen_pos": 0.0,
             "orig_iata": s.get("orig_iata"),
             "dest_iata": s.get("dest_iata"),
-            "trail": trail,                          # real flown path
+            "landed": landed,                        # frontend: pin at dest, track on click
+            "trail": trail,                          # real flown path (empty if landed)
         })
     return out
 

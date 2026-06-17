@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Menu, Moon, Sun, Radar, List, ChevronRight } from "lucide-react";
 import { TrackingForm } from "./components/TrackingForm";
 import { TrackingResultCard } from "./components/TrackingResult";
@@ -9,6 +9,7 @@ import { LiveRadarView } from "./components/LiveRadarView";
 import { LoadingCard } from "./components/LoadingCard";
 import { ErrorCard } from "./components/ErrorCard";
 import { useTrackedAWBs } from "./hooks/useTrackedAWBs";
+import { useGuias } from "./hooks/useGuias";
 import type { TrackingResult } from "./lib/api";
 
 type View = "tracking" | "radar";
@@ -25,7 +26,7 @@ function App() {
   });
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem("darkMode");
-    return saved ? JSON.parse(saved) : false;
+    return saved ? JSON.parse(saved) : true; // dark by default
   });
 
   useEffect(() => {
@@ -42,6 +43,14 @@ function App() {
   }, [darkMode]);
 
   const { trackedAWBs, addAWB, removeAWB, clearAll, refreshAWB, refreshAll, addConnection, unlinkConnection } = useTrackedAWBs();
+  const { guias } = useGuias();
+
+  // Combined list: system guides (from Seal Cargo, auto-tracked) + manually added.
+  // Manual entries win on dedupe (they may have richer connection links).
+  const allAWBs = useMemo(() => {
+    const manual = new Set(trackedAWBs.map((t) => t.awb));
+    return [...trackedAWBs, ...guias.filter((g) => !manual.has(g.awb))];
+  }, [trackedAWBs, guias]);
 
   const handleClear = () => {
     setSelectedResult(null);
@@ -83,7 +92,7 @@ function App() {
   };
 
   const handleSelectFromSidebar = (awb: string) => {
-    const tracked = trackedAWBs.find((t) => t.awb === awb);
+    const tracked = allAWBs.find((t) => t.awb === awb);
     if (tracked) {
       setSelectedAWB(awb);
       setSelectedResult(tracked.data);
@@ -109,7 +118,7 @@ function App() {
         setSelectedResult(data);
         setError(null);
       } else {
-        const tracked = trackedAWBs.find((t) => t.awb === awb);
+        const tracked = allAWBs.find((t) => t.awb === awb);
         if (tracked?.error) {
           setError(tracked.error);
         }
@@ -117,7 +126,7 @@ function App() {
     }
   };
 
-  const selectedTracked = selectedAWB ? trackedAWBs.find((t) => t.awb === selectedAWB) : null;
+  const selectedTracked = selectedAWB ? allAWBs.find((t) => t.awb === selectedAWB) : null;
   const showLoading = isLoading || (selectedTracked?.isLoading && !selectedResult);
   const currentError = error || (selectedTracked?.error && !selectedResult ? selectedTracked.error : null);
 
@@ -127,7 +136,7 @@ function App() {
 
     // If this AWB has a connection (child AWB)
     if (selectedTracked.connectionAWB) {
-      const connectionTracked = trackedAWBs.find(t => t.awb === selectedTracked.connectionAWB);
+      const connectionTracked = allAWBs.find(t => t.awb === selectedTracked.connectionAWB);
       if (connectionTracked) {
         return {
           awb: connectionTracked.awb,
@@ -139,7 +148,7 @@ function App() {
 
     // If this AWB is a connection (has a parent)
     if (selectedTracked.parentAWB) {
-      const parentTracked = trackedAWBs.find(t => t.awb === selectedTracked.parentAWB);
+      const parentTracked = allAWBs.find(t => t.awb === selectedTracked.parentAWB);
       if (parentTracked) {
         return {
           awb: parentTracked.awb,
@@ -167,7 +176,7 @@ function App() {
       {/* Sidebar (hidden in radar mode so the full-screen map owns the screen) */}
       {view !== "radar" && (
         <TrackingSidebar
-          trackedAWBs={trackedAWBs}
+          trackedAWBs={allAWBs}
           selectedAWB={selectedAWB}
           onSelect={handleSelectFromSidebar}
           onRemove={removeAWB}
@@ -382,7 +391,7 @@ function App() {
       {/* Full-screen live radar (rendered above everything via fixed inset-0) */}
       {view === "radar" && (
         <LiveRadarView
-          trackedAWBs={trackedAWBs}
+          trackedAWBs={allAWBs}
           selectedAWB={selectedAWB}
           onSelect={handleSelectFromSidebar}
           onClose={() => setView("tracking")}

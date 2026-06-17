@@ -462,12 +462,22 @@ async def get_flights(
     seen_awbs: set[str] = set()
     for ac in aircraft:
         callsign = (ac.get("flight") or "").strip()
-        lat, lng = ac.get("lat"), ac.get("lon")
-        if not callsign or lat is None or lng is None:
+        if not callsign:
             continue
         claimants = candidate_map.get(callsign.upper())
         if not claimants:
             continue
+        landed = bool(ac.get("landed"))
+        lat, lng = ac.get("lat"), ac.get("lon")
+        # Landed flights have no live position; place the marker at the
+        # destination airport so it shows as "arrived at <dest>" (a pin). Its
+        # historical route is fetched on click via /api/flight-track.
+        if (lat is None or lng is None):
+            dest_coord = get_airport(ac.get("dest_iata"))
+            if landed and dest_coord:
+                lat, lng = dest_coord[0], dest_coord[1]
+            else:
+                continue  # in-air but no track yet → skip this cycle
         alt_raw = ac.get("alt_baro")
         common = dict(
             callsign=callsign,
@@ -482,9 +492,9 @@ async def get_flights(
             altitude=_to_float(alt_raw),
             vertical_rate=_to_float(ac.get("baro_rate")),
             aircraft_desc=(ac.get("desc") or "").strip() or None,
-            on_ground=(alt_raw == "ground"),
+            on_ground=landed or (alt_raw == "ground"),
             seen_pos=_to_float(ac.get("seen_pos")),
-            trail=ac.get("trail") or [],  # FR24 provides the real flown path
+            trail=ac.get("trail") or [],  # FR24 path (empty for landed; fetched on click)
         )
         # Emit one position per distinct AWB riding this aircraft, enriching each
         # with route geometry + timing derived from THAT shipment's metadata.
@@ -528,6 +538,125 @@ async def airports(codes: str = Query("", description="Comma-separated IATA code
         if coord:
             out[c] = [coord[0], coord[1]]
     return {"airports": out}
+
+
+# Source of trackable AWBs (Seal Cargo). Proxied server-side to avoid CORS and
+# to normalize the AWB format. This is FREE — it does NOT touch FR24. FR24 is
+# only ever queried later, per-AWB, and only when that shipment is actually in
+# flight (see /api/flights + the frontend's DEP filter).
+GUIAS_LIST_URL = "https://sealcargotrack.cloud/api/v1/guias-list"
+_GUIAS_TTL = 60.0
+_guias_cache: tuple[float, list[str]] | None = None
+
+
+def _normalize_awb(raw: str) -> str | None:
+    """Normalize a master AWB to XXX-XXXXXXXX (11 digits). Returns None if it
+    can't be made into a valid 11-digit AWB (e.g. a 17-digit HAWB concatenation
+    we don't recognize)."""
+    digits = "".join(ch for ch in raw if ch.isdigit())
+    if len(digits) == 11:
+        return f"{digits[:3]}-{digits[3:]}"
+    return None
+
+
+async def _fetch_guias_codes() -> list[str]:
+    """Get the normalized AWB codes from Seal Cargo (cached, free, no FR24)."""
+    global _guias_cache
+    now = time.monotonic()
+    if _guias_cache and (now - _guias_cache[0]) < _GUIAS_TTL:
+        return _guias_cache[1]
+    async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+        resp = await client.get(GUIAS_LIST_URL, headers={"User-Agent": "KoudrsTracking/0.1"})
+        resp.raise_for_status()
+        raw = resp.json()
+    seen: set[str] = set()
+    awbs: list[str] = []
+    for item in raw if isinstance(raw, list) else []:
+        code = item.get("master_awb") if isinstance(item, dict) else None
+        norm = _normalize_awb(code) if code else None
+        if norm and norm not in seen:
+            seen.add(norm)
+            awbs.append(norm)
+    _guias_cache = (now, awbs)
+    return awbs
+
+
+@app.get("/api/guias-list")
+async def guias_list() -> dict:
+    """List available AWB codes (from Seal Cargo). Free; never calls FR24."""
+    try:
+        awbs = await _fetch_guias_codes()
+    except Exception as e:
+        logger.warning(f"guias-list fetch failed: {type(e).__name__}: {e}")
+        return {"awbs": [], "count": 0, "error": "source unavailable"}
+    return {"awbs": awbs, "count": len(awbs)}
+
+
+# Backend-side tracking of all system guides. SMART PER-AWB CACHE to protect the
+# ScraperAPI / scraping budget: each AWB is cached individually with a TTL that
+# depends on its status. Stable shipments (booked, delivered, at-destination)
+# barely change, so we keep them for HOURS; only actively-moving ones (departed,
+# arrived, in transit) refresh often. This is FREE scraping — FR24 is untouched.
+_ACTIVE_STATUSES = {"DEP", "ARR", "MAN", "RCS"}
+_TTL_ACTIVE = 900.0      # 15 min — in-motion shipments
+_TTL_STABLE = 7200.0     # 2 h — booked / delivered / at-destination (rarely change)
+_TTL_FAILED = 1800.0     # 30 min — don't retry failures too aggressively
+# Per-AWB cache: awb -> (timestamp, result|None)
+_guia_cache: dict[str, tuple[float, dict | None]] = {}
+_guias_lock = asyncio.Lock()
+
+
+def _ttl_for(result: dict | None) -> float:
+    """How long to trust a cached track, based on its latest status."""
+    if not result:
+        return _TTL_FAILED
+    events = result.get("events") or []
+    status = events[0].get("status_code") if events else None
+    return _TTL_ACTIVE if status in _ACTIVE_STATUSES else _TTL_STABLE
+
+
+async def _track_one(awb: str, force: bool = False) -> dict | None:
+    """Track a single AWB (scraping). Cached per-AWB with a status-aware TTL so we
+    don't re-scrape shipments that haven't moved. `force` bypasses the freshness
+    check (manual refresh) but STILL reads the cache so a scrape failure can fall
+    back to the last-known-good value instead of blanking the shipment."""
+    now = time.monotonic()
+    cached = _guia_cache.get(awb)
+    if not force and cached and (now - cached[0]) < _ttl_for(cached[1]):
+        return cached[1]
+
+    m = AWB_PATTERN.match(awb)
+    if not m:
+        return None
+    prefix, serial = m.groups()
+    carrier = get_carrier(prefix)
+    if not carrier:
+        return None
+    try:
+        result = await asyncio.wait_for(carrier.track(prefix, serial), timeout=45)
+        data = result.model_dump(mode="json")
+    except Exception as e:
+        logger.warning(f"guia track failed {awb}: {type(e).__name__}: {e}")
+        # Keep a stale-but-good cached value if we have one, rather than dropping it.
+        data = cached[1] if cached else None
+    _guia_cache[awb] = (time.monotonic(), data)
+    return data
+
+
+@app.get("/api/guias-tracked")
+async def guias_tracked(force: bool = Query(False, description="Bypass cache (manual refresh)")) -> dict:
+    """Track all system guides with our scraper, using a per-AWB status-aware cache
+    so the scraping budget is protected. Returns ready TrackingResult[]. FREE —
+    does not call FR24. `force=1` re-scrapes everything (manual refresh button)."""
+    async with _guias_lock:
+        try:
+            codes = await _fetch_guias_codes()
+        except Exception as e:
+            logger.warning(f"guias-tracked list fetch failed: {e}")
+            return {"guias": [], "count": 0, "error": "source unavailable"}
+        results = await asyncio.gather(*[_track_one(a, force=force) for a in codes])
+        guias = [r for r in results if r]
+        return {"guias": guias, "count": len(guias)}
 
 
 @app.get("/{full_path:path}")

@@ -2,10 +2,14 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { getFlights, type FlightPosition } from "../lib/api";
 import type { TrackedAWB } from "./useTrackedAWBs";
 
-// Statuses worth sending to FR24 for a real flown track. FR24 has the historical
-// trajectory, so we include recently-flown legs (arrived/received/delivered),
-// not just airborne (DEP) — that's how a delivered shipment still shows its route.
-const TRACKABLE_STATUSES = ["DEP", "ARR", "RCF", "NFD", "DLV"];
+// Statuses worth sending to FR24: shipments still in transit or on a just-landed
+// leg (DEP airborne, ARR/RCF arrived at a stop). We deliberately EXCLUDE fully
+// delivered shipments (NFD/DLV): their journey is over, so an FR24-backed pin
+// would only invite an expensive ~40-credit flight-tracks click for a historical
+// route with no live value. Delivered shipments still appear as a green
+// destination pin — that comes from the journey analysis (tracking data), not
+// from this FR24 flight list.
+const TRACKABLE_STATUSES = ["DEP", "ARR", "RCF"];
 
 // Poll cadence when live is ON. Default 5 min: FR24 caches positions ~5 min and
 // the frontend dead-reckons (interpolates) smoothly in between for free, so
@@ -142,6 +146,7 @@ export function useLiveFlights(
   const pollRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
   const lastFrameRef = useRef(0);
+  const committedRef = useRef(false); // did the last frame actually commit state?
   const fetchRef = useRef<() => void>(() => {});
 
   const extraKey = useMemo(
@@ -171,6 +176,7 @@ export function useLiveFlights(
   const fetchFlights = useCallback(async () => {
     if (pairs.length === 0) {
       fixesRef.current = [];
+      committedRef.current = false; // nothing left to settle
       setDisplayFlights([]);
       setMatched(0);
       setError(null); // nothing to fetch -> clear any stale error (kiosk safety)
@@ -182,6 +188,9 @@ export function useLiveFlights(
       const res = await getFlights(pairs);
       const now = performance.now();
       fixesRef.current = res.flights.map((f) => ({ ...f, receivedAt: now }));
+      // Mark dirty so the RAF commits at least one frame for the new fixes, even
+      // if every plane is on the ground (otherwise stationary pins never render).
+      committedRef.current = true;
       setMatched(res.matched);
       setLastUpdated(new Date().toISOString());
       // Append each fresh real fix to that aircraft's breadcrumb trail.
@@ -208,16 +217,35 @@ export function useLiveFlights(
   }, [pairs]);
 
   // Animation loop: glide planes forward between polls via dead reckoning.
+  // Only commit a new array on frames where something is actually MOVING — when
+  // there are no flights (live OFF / nothing in-air) or every plane is on the
+  // ground, we skip setState so an idle kiosk doesn't re-render the whole radar
+  // 8x/sec. One settling frame is committed on the transition to idle so the
+  // last positions stick.
   useEffect(() => {
     const tick = (now: number) => {
       if (now - lastFrameRef.current >= FRAME_MS) {
         lastFrameRef.current = now;
-        setDisplayFlights(
-          fixesRef.current.map((f) => {
-            const { lat, lng } = deadReckon(f, (now - f.receivedAt) / 1000);
-            return { ...f, displayLat: lat, displayLng: lng };
-          })
+        const fixes = fixesRef.current;
+        const moving = fixes.some(
+          (f) => !f.on_ground && f.track != null && f.ground_speed && f.ground_speed > 0
         );
+        if (moving) {
+          committedRef.current = true;
+          setDisplayFlights(
+            fixes.map((f) => {
+              const { lat, lng } = deadReckon(f, (now - f.receivedAt) / 1000);
+              return { ...f, displayLat: lat, displayLng: lng };
+            })
+          );
+        } else if (committedRef.current) {
+          // Transition to idle: commit one final frame so positions settle, then
+          // stop committing until something starts moving again.
+          committedRef.current = false;
+          setDisplayFlights(
+            fixes.map((f) => ({ ...f, displayLat: f.lat, displayLng: f.lng }))
+          );
+        }
       }
       rafRef.current = requestAnimationFrame(tick);
     };

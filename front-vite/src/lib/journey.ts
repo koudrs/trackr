@@ -63,8 +63,12 @@ export function analyzeJourney(data: TrackingResult | null): JourneyState {
   }
   const legs = [...legMap.values()];
 
+  // Origin is the shipment's first departure point — always populate `from` so
+  // the radar can mark the origin and "jump to origin" works in every phase.
+  const startFrom = origin ?? legs[0]?.from ?? null;
+
   if (DONE.has(sc)) {
-    return { ...empty, phase: "delivered", at: destination ?? latest.location, legs };
+    return { ...empty, phase: "delivered", at: destination ?? latest.location, from: startFrom, to: destination, legs };
   }
 
   if (sc === "DEP") {
@@ -83,10 +87,11 @@ export function analyzeJourney(data: TrackingResult | null): JourneyState {
       );
       return {
         ...empty, phase: "at_airport", at: here, currentFlight: latest.flight,
+        from: startFrom, to: destination,
         nextFlight: onward?.flight ?? null, nextTo: destination, legs,
       };
     }
-    return { ...empty, phase: "at_airport", at: here ?? destination, legs };
+    return { ...empty, phase: "at_airport", at: here ?? destination, from: startFrom, to: destination, legs };
   }
 
   // Accepted/booked at origin but not departed yet → awaiting its flight.
