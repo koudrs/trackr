@@ -1055,7 +1055,7 @@ export function LiveRadarView({ trackedAWBs, selectedAWB, onSelect, onClose, dar
                 <Radio className="relative w-4 h-4 text-white" />
               </div>
               <div>
-                <h2 className="text-sm font-bold tracking-tight text-[var(--foreground)] leading-tight">Live Cargo Radar</h2>
+                <h2 className="text-sm font-bold tracking-tight text-[var(--foreground)] leading-tight">PRS Live Radar</h2>
                 <p className="text-[10px] text-[var(--muted-foreground)] leading-tight">
                   <span className="text-amber-400 font-semibold">{matched}</span> live · {pairs.length} tracked
                 </p>

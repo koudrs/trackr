@@ -11,14 +11,21 @@ const API_BASE = import.meta.env.VITE_API_URL || "/api";
  */
 export function useGuias() {
   const [guias, setGuias] = useState<TrackedAWB[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true); // Start true so UI shows loading
+  const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setIsLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${API_BASE}/guias-tracked`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
+      if (data.error) {
+        setError(data.error);
+        return;
+      }
       const list: TrackingResult[] = Array.isArray(data.guias) ? data.guias : [];
       setGuias(
         list.map((d) => ({
@@ -31,8 +38,8 @@ export function useGuias() {
         }))
       );
       setLastUpdated(new Date().toISOString());
-    } catch {
-      /* best-effort; keep whatever we had */
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load shipments");
     } finally {
       setIsLoading(false);
     }
@@ -45,5 +52,5 @@ export function useGuias() {
     load();
   }, [load]);
 
-  return { guias, isLoading, lastUpdated, refresh: load };
+  return { guias, isLoading, error, lastUpdated, refresh: load };
 }

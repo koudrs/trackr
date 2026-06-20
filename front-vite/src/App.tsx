@@ -43,7 +43,7 @@ function App() {
   }, [darkMode]);
 
   const { trackedAWBs, addAWB, removeAWB, clearAll, refreshAWB, refreshAll, addConnection, unlinkConnection } = useTrackedAWBs();
-  const { guias } = useGuias();
+  const { guias, isLoading: guiasLoading, error: guiasError, refresh: refreshGuias } = useGuias();
 
   // Combined list: system guides (from Seal Cargo, auto-tracked) + manually added.
   // Manual entries win on dedupe (they may have richer connection links).
@@ -207,13 +207,13 @@ function App() {
                   <Menu className="h-5 w-5" />
                 </button>
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-amber-500 flex items-center justify-center shadow-md shadow-amber-500/30">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center shadow-md shadow-blue-600/30">
                     <Radar className="h-5 w-5 text-white" />
                   </div>
                   <div>
-                    <h1 className="text-base lg:text-lg font-bold leading-none">Cargo Tracking</h1>
+                    <h1 className="text-base lg:text-lg font-bold leading-none">PRS Cargo Tracker</h1>
                     <p className="text-[10px] lg:text-xs text-[var(--muted-foreground)] hidden sm:block mt-0.5">
-                      Real-time air cargo
+                      Premium Rush Cargo
                     </p>
                   </div>
                 </div>
@@ -345,21 +345,57 @@ function App() {
               </div>
             )}
 
+            {/* System loading state */}
+            {guiasLoading && allAWBs.length === 0 && !selectedAWB && (
+              <div className="bg-[var(--card)] rounded-xl border border-[var(--border)]/60 p-8 text-center shadow-sm mb-6">
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-10 h-10 border-3 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                  <div>
+                    <p className="text-[var(--foreground)] font-medium">Loading shipments...</p>
+                    <p className="text-sm text-[var(--muted-foreground)] mt-1">
+                      Fetching tracking data from carriers
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* System error state */}
+            {guiasError && !guiasLoading && allAWBs.length === 0 && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-6 mb-6">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center shrink-0">
+                    <span className="text-red-500 text-lg">!</span>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-red-400 font-medium">Failed to load shipments</p>
+                    <p className="text-sm text-[var(--muted-foreground)] mt-1">{guiasError}</p>
+                    <button
+                      onClick={refreshGuias}
+                      className="mt-3 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg text-sm font-medium transition-colors"
+                    >
+                      Try again
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Welcome state - no trackings */}
-            {!selectedAWB && trackedAWBs.length === 0 && (
+            {!selectedAWB && allAWBs.length === 0 && !guiasLoading && !guiasError && (
               <div className="mb-6">
                 <SupportedCarriers />
               </div>
             )}
 
             {/* Empty state - has trackings but none selected */}
-            {!selectedAWB && trackedAWBs.length > 0 && (
+            {!selectedAWB && allAWBs.length > 0 && !guiasLoading && (
               <div className="bg-[var(--card)] rounded-xl border border-[var(--border)]/60 p-8 text-center shadow-sm">
-                <p className="text-[var(--muted-foreground)]">
+                <p className="text-[var(--foreground)]">
                   <span className="hidden lg:inline">Select a shipment from the left panel to view details</span>
                   <span className="lg:hidden">Tap the menu to see your shipments</span>
                 </p>
-                <p className="text-sm text-[var(--muted-foreground)]/70 mt-2">
+                <p className="text-sm text-[var(--muted-foreground)] mt-2">
                   or enter a new AWB in the search bar
                 </p>
               </div>
@@ -370,19 +406,22 @@ function App() {
         {/* Footer */}
         <footer className="shrink-0 bg-[var(--card)] border-t border-[var(--border)] px-4 lg:px-6 py-3">
           <div className="max-w-5xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {guiasLoading && (
+                <div className="flex items-center gap-2 text-xs text-blue-500">
+                  <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                  <span>Loading shipments...</span>
+                </div>
+              )}
+              {!guiasLoading && (
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  {allAWBs.length > 0 ? `${allAWBs.length} shipments` : "No shipments"}
+                  {guias.length > 0 && ` (${guias.length} system)`}
+                </p>
+              )}
+            </div>
             <p className="text-xs text-[var(--muted-foreground)]">
-              Powered by{" "}
-              <a
-                href="https://koudrs.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-medium hover:underline"
-              >
-                koudrs.com
-              </a>
-            </p>
-            <p className="text-xs text-[var(--muted-foreground)]">
-              {trackedAWBs.length > 0 ? `${trackedAWBs.length} shipments` : "No shipments"}
+              Premium Rush Cargo © {new Date().getFullYear()}
             </p>
           </div>
         </footer>
