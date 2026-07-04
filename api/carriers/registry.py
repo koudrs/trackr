@@ -3,6 +3,7 @@
 from .afklcargo import AFKLCargoTracker
 from .amerijet import AmerijetTracker
 from .atlas import AtlasAirTracker
+from .awesome_cargo import AwesomeCargoTracker
 from .base import CarrierTracker
 from .cargolux import CargoluxTracker
 from .china_cargo import ChinaCargoTracker
@@ -19,6 +20,7 @@ from .turkish import TurkishCargoTracker
 # Instantiate all trackers
 _TRACKERS: list[CarrierTracker] = [
     AmerijetTracker(),
+    AwesomeCargoTracker(),
     CargoluxTracker(),
     CopaCargoTracker(),
     KoreanAirTracker(),
