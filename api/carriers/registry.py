@@ -15,6 +15,7 @@ from .latam import LatamCargoTracker
 from .mscair import MSCAirCargoTracker
 from .silkway import SilkWayTracker
 from .smartkargo import SmartKargoTracker
+from .swissworldcargo import SwissWorldCargoTracker
 from .turkish import TurkishCargoTracker
 
 # Instantiate all trackers
@@ -34,6 +35,7 @@ _TRACKERS: list[CarrierTracker] = [
     DHLAviationTracker(),
     IAGCargoTracker(),
     LatamCargoTracker(),
+    SwissWorldCargoTracker(),
 ]
 
 # Build prefix -> tracker mapping
