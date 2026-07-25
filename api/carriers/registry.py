@@ -13,6 +13,7 @@ from .iag_cargo import IAGCargoTracker
 from .koreanair import KoreanAirTracker
 from .latam import LatamCargoTracker
 from .mscair import MSCAirCargoTracker
+from .national_air import NationalAirCargoTracker
 from .silkway import SilkWayTracker
 from .smartkargo import SmartKargoTracker
 from .swissworldcargo import SwissWorldCargoTracker
@@ -35,6 +36,7 @@ _TRACKERS: list[CarrierTracker] = [
     DHLAviationTracker(),
     IAGCargoTracker(),
     LatamCargoTracker(),
+    NationalAirCargoTracker(),
     SwissWorldCargoTracker(),
 ]
 
