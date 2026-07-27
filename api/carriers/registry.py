@@ -1,5 +1,6 @@
 """Carrier registry - maps AWB prefixes to tracker implementations."""
 
+from .aerologic import AeroLogicTracker
 from .afklcargo import AFKLCargoTracker
 from .amerijet import AmerijetTracker
 from .atlas import AtlasAirTracker
@@ -21,6 +22,7 @@ from .turkish import TurkishCargoTracker
 
 # Instantiate all trackers
 _TRACKERS: list[CarrierTracker] = [
+    AeroLogicTracker(),
     AmerijetTracker(),
     AwesomeCargoTracker(),
     CargoluxTracker(),
