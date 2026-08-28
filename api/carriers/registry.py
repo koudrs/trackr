@@ -2,12 +2,14 @@
 
 from .aerologic import AeroLogicTracker
 from .afklcargo import AFKLCargoTracker
+from .aireuropa import AirEuropaCargoTracker
 from .amerijet import AmerijetTracker
 from .atlas import AtlasAirTracker
 from .awesome_cargo import AwesomeCargoTracker
 from .base import CarrierTracker
 from .cargolux import CargoluxTracker
 from .china_cargo import ChinaCargoTracker
+from .compass_cargo import CompassCargoTracker
 from .copa import CopaCargoTracker
 from .dhl_aviation import DHLAviationTracker
 from .iag_cargo import IAGCargoTracker
@@ -23,7 +25,9 @@ from .turkish import TurkishCargoTracker
 # Instantiate all trackers
 _TRACKERS: list[CarrierTracker] = [
     AeroLogicTracker(),
+    AirEuropaCargoTracker(),
     AmerijetTracker(),
+    CompassCargoTracker(),
     AwesomeCargoTracker(),
     CargoluxTracker(),
     CopaCargoTracker(),
